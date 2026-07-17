@@ -11,6 +11,33 @@ Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard
 - Node 20+
 - pnpm 10+ (`corepack enable` or `npm i -g pnpm`)
 
+## Install (first time)
+
+1. **Get the code** — unzip `local-mcp-runner.zip` (or clone the repo), then:
+   ```
+   cd local-mcp-runner
+   ```
+2. **Install dependencies:**
+   ```
+   pnpm install
+   ```
+3. **Have the Retool apps repo** checked out somewhere (e.g. `retool-ops`). The
+   tool reads app source from there; it never writes to it.
+4. **Start the control panel:**
+   ```
+   pnpm panel        # → http://localhost:5170
+   ```
+5. **In the panel:** set your MCP URL (default `https://ops.wayve.retool.com/mcp`),
+   click **Connect / Authorize** — a browser tab opens once to log in to Retool;
+   the token is cached for next time.
+6. **Browse** to your `retool-ops` folder → **Scan** → click **Run** on an app.
+   It opens on its own port. Done.
+
+Prefer the terminal? Skip the panel and run one app directly:
+```
+pnpm start -- --app "/abs/path/to/retool-ops/apps-v2/<Group>/<App>"
+```
+
 ## Control panel (easiest start)
 
     pnpm install
