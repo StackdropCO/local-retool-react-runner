@@ -163,6 +163,7 @@
       async function refreshStatus() {
         const s = await api('/api/status')
         $('mcpUrl').value = $('mcpUrl').value || s.mcpUrl
+        if (s.repoDir && !$('repoDir').value) $('repoDir').value = s.repoDir
         $('dotCached').className = 'dot ' + (s.cachedAuth ? 'ok' : 'warn')
         $('cachedTxt').textContent = s.cachedAuth ? 'token cached' : 'no token yet'
         $('dotConn').className = 'dot ' + (s.connected ? 'ok' : '')

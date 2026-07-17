@@ -7,6 +7,7 @@ import express from 'express'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
 import { connectMcp, hasCachedAuth, type McpClient } from '../mcpClient.js'
 import { scanApps } from '../scan.js'
+import { readConfig, writeConfig } from '../config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
@@ -27,7 +28,7 @@ const READABLE_TYPES = new Set([
 type Running = { appPath: string; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
 
 export function startPanel(port: number) {
-  let mcpUrl = MCP_URL
+  let mcpUrl = readConfig().mcpUrl || MCP_URL
   let mcp: McpClient | null = null
   const running = new Map<number, Running>()
 
@@ -37,7 +38,7 @@ export function startPanel(port: number) {
   app.get('/', (_req, res) => res.type('html').send(readFileSync(join(HERE, 'index.html'), 'utf8')))
 
   app.get('/api/status', (_req, res) => {
-    res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl), connected: !!mcp })
+    res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl), connected: !!mcp, repoDir: readConfig().repoDir || '' })
   })
 
   // Set the MCP URL (does not connect). Clears any existing connection.
@@ -53,6 +54,7 @@ export function startPanel(port: number) {
       mcp = null
     }
     mcpUrl = next
+    writeConfig({ mcpUrl })
     res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl) })
   })
 
@@ -116,7 +118,9 @@ export function startPanel(port: number) {
       return res.status(400).json({ error: `directory not found: ${raw} (use an absolute path, e.g. /Users/you/Projects/retool-ops)` })
     }
     try {
-      res.json({ apps: scanApps(repoDir), repoDir })
+      const apps = scanApps(repoDir)
+      writeConfig({ repoDir }) // remember the last good repo dir
+      res.json({ apps, repoDir })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
     }
