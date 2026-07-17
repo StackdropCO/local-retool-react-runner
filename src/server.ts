@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import express from 'express'
 import { createServer as createViteServer } from 'vite'
@@ -17,7 +17,13 @@ import type { McpClient } from './mcpClient.js'
 export function buildAppAliases(appDir: string): Record<string, string> {
   const pkg = JSON.parse(readFileSync(join(appDir, 'frontend', 'package.json'), 'utf8'))
   const deps = Object.keys(pkg.dependencies ?? {})
-  const alias: Record<string, string> = { '@app': join(appDir, 'frontend') }
+  const alias: Record<string, string> = {}
+  // Most-specific first: appEntry always imports '@app/orgTheme.css'; if this
+  // app has none, resolve it to an empty stub. Must precede the '@app' prefix.
+  if (!existsSync(join(appDir, 'frontend', 'orgTheme.css'))) {
+    alias['@app/orgTheme.css'] = join(TOOL_ROOT, 'src', 'empty.css')
+  }
+  alias['@app'] = join(appDir, 'frontend')
   for (const name of deps) alias[name] = join(TOOL_ROOT, 'node_modules', name)
   return alias
 }

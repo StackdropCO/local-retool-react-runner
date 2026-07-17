@@ -8,13 +8,22 @@ Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard
 
 ## Run
 
-    npm install
-    npm start                 # read-only (default)
+    npm install               # one-time: the tool's own deps
+    npm start                 # read-only (default) — the Shift Utilization Dashboard
     npm start -- --writes     # allow INSERT/UPDATE/DELETE via the MCP
-    npm start -- --app "/abs/path/to/another/app" --port 5175
 
 First run opens a browser for Retool MCP OAuth; tokens cache under `.mcp-auth/`
 and refresh automatically (later runs don't prompt).
+
+## Adding another app (one command)
+
+    npm start -- --app "/abs/path/to/any/apps-v2/app" --port 5175
+
+Everything is auto-detected from the app: its frontend deps are installed into
+this tool's `node_modules` on startup, endpoints are discovered under
+`backend/**` (any group dir — `shift/`, `readiness/`, …), the `hooks/backend/<group>`
+import is served virtually, and resources are read from the app's `package.json`.
+The app's entry is always `frontend/App.tsx`; `orgTheme.css` is optional.
 
 ## How it works
 

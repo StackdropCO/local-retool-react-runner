@@ -1,6 +1,7 @@
 import { DEFAULT_APP_DIR } from './paths.js'
 import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
+import { ensureFrontendDeps } from './deps.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -14,6 +15,7 @@ async function main() {
   const writes = has('writes')
   console.log(`[runner] app=${appDir}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
+  ensureFrontendDeps(appDir)
   const mcp = await connectMcp()
   const { url } = await startServer({ appDir, port, writes, mcp })
   console.log(`[runner] serving ${url}`)
