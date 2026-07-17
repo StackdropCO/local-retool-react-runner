@@ -153,7 +153,8 @@ export function startPanel(port: number) {
       return res.json({ port: existing.port, url: existing.url, name: existing.name, writes: existing.writes, alreadyRunning: true })
     }
     const p = await nextPort()
-    const args = ['src/index.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
+    // Launch in watch mode (dev.ts) so backend/query edits auto-reload the app.
+    const args = ['src/dev.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
     if (writes) args.push('--writes')
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
     const url = `http://localhost:${p}`

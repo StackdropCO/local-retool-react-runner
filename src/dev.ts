@@ -58,7 +58,11 @@ for (const { dir, label } of watchDirs) {
   console.log(`[dev] watching ${label}: ${dir}`)
 }
 
-process.on('SIGINT', () => {
-  child?.kill('SIGTERM')
-  process.exit(0)
-})
+// Kill the child and exit when the parent (e.g. the panel) stops us.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    restarting = false // don't respawn on this exit
+    child?.kill('SIGTERM')
+    process.exit(0)
+  })
+}
