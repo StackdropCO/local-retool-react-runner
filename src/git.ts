@@ -1,7 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, relative, basename } from 'node:path'
+import { join, relative, basename, dirname } from 'node:path'
 import { TOOL_ROOT } from './paths.js'
+
+// Worktrees live OUTSIDE the tool dir (Vite's root) so a running app's Vite
+// never crawls/reloads them. A hidden sibling folder keeps them off the repo too.
+const WORKTREE_BASE = join(dirname(TOOL_ROOT), '.local-mcp-runner-worktrees')
 
 const git = (cwd: string, args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -91,7 +95,7 @@ export function resolveAppForBranch(appDir: string, branch?: string): string {
   const rel = relative(root, appDir)
   let wt = existingWorktree(root, branch)
   if (!wt) {
-    wt = join(TOOL_ROOT, '.worktrees', `${sanitize(basename(root))}__${sanitize(branch)}`)
+    wt = join(WORKTREE_BASE, `${sanitize(basename(root))}__${sanitize(branch)}`)
     const hasLocal = git(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
       .split('\n')
       .includes(branch)
