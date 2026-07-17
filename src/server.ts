@@ -9,6 +9,19 @@ import { readResourceRefs, createRunner } from './endpointRunner.js'
 import { resolveResources, buildGlobals } from './resourceGlobals.js'
 import type { McpClient } from './mcpClient.js'
 
+// The app frontend lives outside the tool root, so Vite can't resolve its bare
+// npm imports (react, radix, lucide, ...) — those packages are installed in the
+// tool's node_modules. Alias every frontend dependency name to the tool copy.
+// @rollup/plugin-alias string matching only hits `name` and `name/<subpath>`,
+// so this is safe and covers deep imports like `react-dom/client`.
+export function buildAppAliases(appDir: string): Record<string, string> {
+  const pkg = JSON.parse(readFileSync(join(appDir, 'frontend', 'package.json'), 'utf8'))
+  const deps = Object.keys(pkg.dependencies ?? {})
+  const alias: Record<string, string> = { '@app': join(appDir, 'frontend') }
+  for (const name of deps) alias[name] = join(TOOL_ROOT, 'node_modules', name)
+  return alias
+}
+
 export function discoverEndpoints(appDir: string): string[] {
   const dir = join(appDir, 'backend', 'shift')
   return readdirSync(dir)
@@ -46,7 +59,7 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
     appType: 'custom',
     server: { middlewareMode: true },
     plugins: [react(), hooksVirtualPlugin({ appDir: opts.appDir, endpoints })],
-    resolve: { alias: { '@app': join(opts.appDir, 'frontend') } },
+    resolve: { alias: buildAppAliases(opts.appDir), dedupe: ['react', 'react-dom'] },
   })
   app.use(vite.middlewares)
 
