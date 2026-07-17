@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createRunner, readResourceRefs } from './endpointRunner.js'
+import { DEFAULT_APP_DIR } from './paths.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-describe('readResourceRefs', () => {
+describe.skipIf(!existsSync(DEFAULT_APP_DIR))('readResourceRefs (needs retool-ops checked out)', () => {
   it('flattens the app package.json resourceReferencesByFile to unique name/display/type', () => {
-    const refs = readResourceRefs('/Users/arsany.milad.ext/Projects/retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard')
+    const refs = readResourceRefs(DEFAULT_APP_DIR)
     const names = refs.map((r) => r.displayName).sort()
     expect(names).toContain('Databricks')
     expect(names).toContain('Lakebase Retool - OLTP')

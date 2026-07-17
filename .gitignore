@@ -2,3 +2,4 @@ node_modules/
 .mcp-auth/
 logs/
 config.json
+.DS_Store
