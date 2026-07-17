@@ -1,11 +1,11 @@
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import express from 'express'
 import { createServer as createViteServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { TOOL_ROOT } from './paths.js'
 import { hooksVirtualPlugin } from './vitePlugin.js'
-import { readResourceRefs, createRunner } from './endpointRunner.js'
+import { readResourceRefs, createRunner, walkTs } from './endpointRunner.js'
 import { resolveResources, buildGlobals } from './resourceGlobals.js'
 import type { McpClient } from './mcpClient.js'
 
@@ -23,11 +23,10 @@ export function buildAppAliases(appDir: string): Record<string, string> {
 }
 
 export function discoverEndpoints(appDir: string): string[] {
-  const dir = join(appDir, 'backend', 'shift')
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.ts'))
-    .filter((f) => /export\s+default/.test(readFileSync(join(dir, f), 'utf8')))
-    .map((f) => f.replace(/\.ts$/, ''))
+  // Any *.ts under backend/** with a default export is an endpoint.
+  return walkTs(join(appDir, 'backend'))
+    .filter((f) => /export\s+default/.test(readFileSync(f, 'utf8')))
+    .map((f) => f.replace(/\.ts$/, '').split('/').pop() as string)
 }
 
 // Databricks/Lakebase .query() already returns {data}; the probe confirmed

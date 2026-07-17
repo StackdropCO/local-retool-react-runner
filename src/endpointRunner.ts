@@ -1,7 +1,19 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ResourceRef } from './resourceGlobals.js'
+
+// Recursively collect *.ts files under a directory.
+export function walkTs(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name)
+    if (statSync(p).isDirectory()) out.push(...walkTs(p))
+    else if (name.endsWith('.ts')) out.push(p)
+  }
+  return out
+}
 
 export function readResourceRefs(appDir: string): ResourceRef[] {
   const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
@@ -27,9 +39,11 @@ export function createRunner(opts: { appDir: string; globals: Record<string, unk
 
   async function load(endpoint: string) {
     if (cache.has(endpoint)) return cache.get(endpoint)!
-    // fixtures live flat; real app endpoints under backend/shift/
-    const candidates = [join(opts.appDir, 'backend', 'shift', `${endpoint}.ts`), join(opts.appDir, `${endpoint}.ts`)]
-    const file = candidates.find((c) => existsSync(c))
+    // fixtures live flat; real app endpoints live anywhere under backend/**.
+    const flat = join(opts.appDir, `${endpoint}.ts`)
+    const file = existsSync(flat)
+      ? flat
+      : walkTs(join(opts.appDir, 'backend')).find((f) => f.endsWith(`/${endpoint}.ts`))
     if (!file) throw new Error(`endpoint not found: ${endpoint}`)
     const mod: any = await import(pathToFileURL(file).href)
     const fn = mod.default
