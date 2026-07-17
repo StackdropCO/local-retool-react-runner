@@ -6,18 +6,24 @@ nothing written into the `retool-ops` repo.
 
 Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard`.
 
+## Requirements
+
+- Node 20+
+- pnpm 10+ (`corepack enable` or `npm i -g pnpm`)
+
 ## Run
 
-    npm install               # one-time: the tool's own deps
-    npm start                 # read-only (default) — the Shift Utilization Dashboard
-    npm start -- --writes     # allow INSERT/UPDATE/DELETE via the MCP
+    pnpm install              # one-time: the tool's own deps
+    pnpm start                # read-only (default) — the Shift Utilization Dashboard
+    pnpm start -- --writes    # allow INSERT/UPDATE/DELETE via the MCP
 
 First run opens a browser for Retool MCP OAuth; tokens cache under `.mcp-auth/`
-and refresh automatically (later runs don't prompt).
+and refresh automatically (later runs don't prompt). You need access to the
+Retool org (`ops.wayve.retool.com`) to authorize.
 
 ## Adding another app (one command)
 
-    npm start -- --app "/abs/path/to/any/apps-v2/app" --port 5175
+    pnpm start -- --app "/abs/path/to/any/apps-v2/app" --port 5175
 
 Everything is auto-detected from the app: its frontend deps are installed into
 this tool's `node_modules` on startup, endpoints are discovered under
@@ -28,7 +34,7 @@ The app's entry is always `frontend/App.tsx`; `orgTheme.css` is optional.
 ## How it works
 
 - **Vite** (root = this dir) serves the app's real `frontend/App.tsx` (aliased
-  `@app`). The app's npm deps are installed here and aliased so imports resolve.
+  `@app`). The app's frontend deps are installed here (via pnpm) and aliased so imports resolve.
 - The app imports `./hooks/backend/shift`, which Retool normally generates. We
   serve it as an **in-memory Vite virtual module** — the hooks POST to
   `/rpc/:endpoint`.
@@ -73,5 +79,5 @@ Known gap:
 
 ## Probe
 
-`npm run probe` connects, lists resource bindings, and runs `SELECT 1` against
+`pnpm run probe` connects, lists resource bindings, and runs `SELECT 1` against
 Databricks — a quick check that OAuth and the resource path are healthy.

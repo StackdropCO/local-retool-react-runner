@@ -25,5 +25,5 @@ export function ensureFrontendDeps(appDir: string, toolRoot: string = TOOL_ROOT)
     return
   }
   console.log(`[runner] installing ${missing.length} missing frontend dep(s): ${missing.join(', ')}`)
-  execFileSync('npm', ['install', '--no-save', ...missing], { cwd: toolRoot, stdio: 'inherit' })
+  execFileSync('pnpm', ['add', ...missing], { cwd: toolRoot, stdio: 'inherit' })
 }

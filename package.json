@@ -2,6 +2,7 @@
   "name": "local-mcp-runner",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "test": "vitest run",
     "probe": "tsx src/scripts/probe.ts",
