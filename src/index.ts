@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_APP_DIR } from './paths.js'
+import { DEFAULT_APP_DIR, MCP_URL } from './paths.js'
 import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
@@ -24,8 +24,9 @@ async function main() {
   }
   console.log(`[runner] app=${appDir}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
+  const mcpUrl = arg('mcp-url', MCP_URL)!
   ensureFrontendDeps(appDir)
-  const mcp = await connectMcp()
+  const mcp = await connectMcp(mcpUrl)
   const { url } = await startServer({ appDir, port, writes, mcp })
   console.log(`[runner] serving ${url}`)
 }

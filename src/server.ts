@@ -62,7 +62,9 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
   const vite = await createViteServer({
     root: TOOL_ROOT,
     appType: 'custom',
-    server: { middlewareMode: true },
+    // Unique HMR ws port per app so several runners can run at once (the panel
+    // launches multiple). Derived from the app port to avoid collisions.
+    server: { middlewareMode: true, hmr: { port: opts.port + 3000 } },
     plugins: [react(), hooksVirtualPlugin({ appDir: opts.appDir, endpoints })],
     resolve: { alias: buildAppAliases(opts.appDir), dedupe: ['react', 'react-dom'] },
   })

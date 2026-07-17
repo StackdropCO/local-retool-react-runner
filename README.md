@@ -11,6 +11,17 @@ Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard
 - Node 20+
 - pnpm 10+ (`corepack enable` or `npm i -g pnpm`)
 
+## Control panel (easiest start)
+
+    pnpm install
+    pnpm panel                # http://localhost:5170
+
+A small web UI to: set the **MCP URL** + authorize (and see auth/connection
+status), list the org's **resources** (with a "queryable" flag), **scan** a
+`retool-ops` directory for apps, and **run / stop** any app with one click
+(optionally with writes). Each app launches on its own port. Everything below is
+also available from the CLI.
+
 ## Run
 
     pnpm install              # one-time: the tool's own deps

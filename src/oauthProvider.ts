@@ -12,14 +12,20 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js'
 
 export const CALLBACK_PORT = 8788
-const dir = authDir()
-const read = (f: string): any => (existsSync(join(dir, f)) ? JSON.parse(readFileSync(join(dir, f), 'utf8')) : undefined)
-const write = (f: string, v: unknown) => {
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, f), JSON.stringify(v, null, 2))
-}
 
 export class FileOAuthProvider implements OAuthClientProvider {
+  private dir: string
+  constructor(host?: string) {
+    this.dir = authDir(host)
+  }
+  private read(f: string): any {
+    const p = join(this.dir, f)
+    return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : undefined
+  }
+  private write(f: string, v: unknown) {
+    mkdirSync(this.dir, { recursive: true })
+    writeFileSync(join(this.dir, f), JSON.stringify(v, null, 2))
+  }
   get redirectUrl() {
     return `http://localhost:${CALLBACK_PORT}/auth/callback`
   }
@@ -33,22 +39,22 @@ export class FileOAuthProvider implements OAuthClientProvider {
     }
   }
   clientInformation(): OAuthClientInformation | undefined {
-    return read('client.json')
+    return this.read('client.json')
   }
   saveClientInformation(info: OAuthClientInformationFull) {
-    write('client.json', info)
+    this.write('client.json', info)
   }
   tokens(): OAuthTokens | undefined {
-    return read('tokens.json')
+    return this.read('tokens.json')
   }
   saveTokens(tokens: OAuthTokens) {
-    write('tokens.json', tokens)
+    this.write('tokens.json', tokens)
   }
   saveCodeVerifier(v: string) {
-    write('verifier.json', v)
+    this.write('verifier.json', v)
   }
   codeVerifier(): string {
-    return read('verifier.json')
+    return this.read('verifier.json')
   }
   async redirectToAuthorization(url: URL) {
     console.log(`[oauth] opening browser to authorize:\n${url.toString()}`)

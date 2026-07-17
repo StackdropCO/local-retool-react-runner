@@ -7,7 +7,8 @@
     "test": "vitest run",
     "probe": "tsx src/scripts/probe.ts",
     "start": "tsx src/index.ts",
-    "dev": "tsx src/dev.ts"
+    "dev": "tsx src/dev.ts",
+    "panel": "tsx src/panel.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

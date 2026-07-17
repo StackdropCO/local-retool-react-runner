@@ -1,8 +1,16 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
-import { MCP_URL } from './paths.js'
+import { MCP_URL, authDir } from './paths.js'
 import { FileOAuthProvider, waitForCallback } from './oauthProvider.js'
+
+// Non-interactive: is there a cached token for this MCP host? (Does not connect
+// or open a browser — safe for a status check.)
+export function hasCachedAuth(url: string = MCP_URL): boolean {
+  return existsSync(join(authDir(new URL(url).host), 'tokens.json'))
+}
 
 export type ResourceBinding = { resource_id: string; variable_name: string; type: string; display_name?: string }
 
@@ -38,10 +46,10 @@ function parseResult(result: any): unknown {
   return parts.join('\n')
 }
 
-export async function connectMcp(): Promise<McpClient> {
-  const authProvider = new FileOAuthProvider()
+export async function connectMcp(url: string = MCP_URL): Promise<McpClient> {
+  const authProvider = new FileOAuthProvider(new URL(url).host)
   const client = new Client({ name: 'local-mcp-runner', version: '0.1.0' }, { capabilities: {} })
-  const newTransport = () => new StreamableHTTPClientTransport(new URL(MCP_URL), { authProvider })
+  const newTransport = () => new StreamableHTTPClientTransport(new URL(url), { authProvider })
 
   try {
     await client.connect(newTransport())

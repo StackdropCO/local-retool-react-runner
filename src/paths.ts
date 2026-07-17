@@ -13,6 +13,8 @@ export const DEFAULT_APP_DIR = join(
   'retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard',
 )
 
-export const MCP_URL = 'https://ops.wayve.retool.com/mcp'
-export const authDir = () => join(TOOL_ROOT, '.mcp-auth')
+export const MCP_URL = process.env.RETOOL_MCP_URL || 'https://ops.wayve.retool.com/mcp'
+// Token cache is namespaced per MCP host so multiple Retool orgs don't clash.
+export const authDir = (host?: string) =>
+  host ? join(TOOL_ROOT, '.mcp-auth', host) : join(TOOL_ROOT, '.mcp-auth')
 export const logsDir = () => join(TOOL_ROOT, 'logs')
