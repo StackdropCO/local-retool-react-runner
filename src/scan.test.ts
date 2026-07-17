@@ -2,22 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { scanApps } from './scan.js'
-import { DEFAULT_APP_DIR } from './paths.js'
 
-// …/retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard → …/retool-ops
-const REPO = dirname(dirname(dirname(DEFAULT_APP_DIR)))
-const hasRepo = existsSync(DEFAULT_APP_DIR)
+// Set RETOOL_TEST_APP to an apps-v2 app dir to exercise scan against real data.
+const APP = process.env.RETOOL_TEST_APP || ''
+const REPO = APP ? dirname(dirname(dirname(APP))) : ''
 
-describe.skipIf(!hasRepo)('scanApps (needs retool-ops checked out next to this tool)', () => {
-  it('finds the Stackdrop-Hangar apps with their endpoints and resources', () => {
+describe.skipIf(!APP || !existsSync(APP))('scanApps (set RETOOL_TEST_APP to run)', () => {
+  it('finds apps under a repo with their endpoints and resources', () => {
     const apps = scanApps(REPO)
-    const names = apps.map((a) => a.name)
-    expect(names).toContain('Shift Utilization Dashboard')
-
-    const dash = apps.find((a) => a.name === 'Shift Utilization Dashboard')!
-    expect(dash.endpoints).toContain('getShiftTimeline')
-    expect(dash.resources.map((r) => r.displayName)).toContain('Databricks')
-    expect(dash.path).toContain('Shift Utilization Dashboard')
-    expect(dash.group).toBe('Stackdrop-Hangar')
+    expect(apps.length).toBeGreaterThan(0)
+    const target = apps.find((a) => APP.endsWith(a.path.split('/').slice(-1)[0]))!
+    expect(target).toBeTruthy()
+    expect(target.endpoints.length).toBeGreaterThan(0)
+    expect(target.resources.length).toBeGreaterThan(0)
   })
 })

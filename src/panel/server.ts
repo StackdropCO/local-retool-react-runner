@@ -61,6 +61,7 @@ export function startPanel(port: number) {
 
   // Connect + OAuth. Opens a browser on first auth; uses cached tokens otherwise.
   app.post('/api/auth', async (_req, res) => {
+    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
     try {
       if (!mcp) mcp = await connectMcp(mcpUrl)
       res.json({ connected: true, mcpUrl })
@@ -70,6 +71,7 @@ export function startPanel(port: number) {
   })
 
   app.get('/api/resources', async (_req, res) => {
+    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
     try {
       if (!mcp) mcp = await connectMcp(mcpUrl)
       const list = await mcp.listResources()
@@ -147,6 +149,7 @@ export function startPanel(port: number) {
     const name = String(req.body?.name || appPath.split('/').pop() || 'app')
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
+    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first (section 1), then Save URL.' })
     // Already running this app? Reuse it instead of launching a duplicate.
     const existing = [...running.values()].find((r) => r.appPath === appPath)
     if (existing) {

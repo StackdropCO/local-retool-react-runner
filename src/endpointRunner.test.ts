@@ -3,21 +3,21 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createRunner, readResourceRefs } from './endpointRunner.js'
-import { DEFAULT_APP_DIR } from './paths.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
+const APP = process.env.RETOOL_TEST_APP || ''
 
-describe.skipIf(!existsSync(DEFAULT_APP_DIR))('readResourceRefs (needs retool-ops checked out)', () => {
-  it('flattens the app package.json resourceReferencesByFile to unique name/display/type', () => {
-    const refs = readResourceRefs(DEFAULT_APP_DIR)
-    const names = refs.map((r) => r.displayName).sort()
-    expect(names).toContain('Databricks')
-    expect(names).toContain('Lakebase Retool - OLTP')
-    expect(names).toContain('ConnectTeamAPI')
-    const lake = refs.filter((r) => r.displayName === 'Lakebase Retool - OLTP')
-    expect(lake).toHaveLength(1) // de-duped
-    expect(lake[0].name).toBe('089dd8fc-ec8d-4e34-8021-ef69d5ef7338') // Resource.name = UUID
-    expect(lake[0].type).toBe('databricksLakebase')
+describe.skipIf(!APP || !existsSync(join(APP, 'package.json')))('readResourceRefs (set RETOOL_TEST_APP to run)', () => {
+  it('flattens the app package.json resourceReferencesByFile to unique refs', () => {
+    const refs = readResourceRefs(APP)
+    expect(refs.length).toBeGreaterThan(0)
+    // each ref has name (Resource id), displayName, type; no duplicate displayNames
+    const displayNames = refs.map((r) => r.displayName)
+    expect(new Set(displayNames).size).toBe(displayNames.length)
+    for (const r of refs) {
+      expect(typeof r.name).toBe('string')
+      expect(typeof r.type).toBe('string')
+    }
   })
 })
 

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { watch, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { TOOL_ROOT, DEFAULT_APP_DIR } from './paths.js'
+import { TOOL_ROOT } from './paths.js'
 
 // Dev launcher: runs the server and restarts it on backend / tool-source
 // changes. The app's FRONTEND is hot-reloaded by Vite inside the child (no
@@ -13,7 +13,7 @@ function argVal(name: string, fallback: string): string {
   return i >= 0 ? process.argv[i + 1] : fallback
 }
 
-const appDir = argVal('app', DEFAULT_APP_DIR)
+const appDir = argVal('app', '') // watch this app's backend if provided
 const passthroughArgs = process.argv.slice(2) // forward --app/--port/--writes to the child
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
 

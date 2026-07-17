@@ -2,9 +2,10 @@
 
 Runs an existing Retool **apps-as-code** (React SDK) app **locally**, using the
 Retool **MCP** as the backend/resource connection — no changes to the app, and
-nothing written into the `retool-ops` repo.
+nothing written into your apps repo.
 
-Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard`.
+No org/machine defaults are baked in: you provide your own **MCP URL** and your
+own **apps repo directory** (both are saved after first use).
 
 ## Requirements
 
@@ -21,22 +22,23 @@ Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard
    ```
    pnpm install
    ```
-3. **Have the Retool apps repo** checked out somewhere (e.g. `retool-ops`). The
-   tool reads app source from there; it never writes to it.
+3. **Have your Retool apps repo** checked out somewhere. The tool reads app
+   source from there; it never writes to it.
 4. **Start the control panel:**
    ```
    pnpm panel        # → http://localhost:5170
    ```
-5. **In the panel:** set your MCP URL (default `https://ops.wayve.retool.com/mcp`),
-   click **Connect / Authorize** — a browser tab opens once to log in to Retool;
-   the token is cached for next time.
-6. **Browse** to your `retool-ops` folder → **Scan** → click **Run** on an app.
-   It opens on its own port. Done.
+5. **In the panel:** enter **your** MCP URL (e.g. `https://<your-org>.retool.com/mcp`),
+   click **Save URL**, then **Connect / Authorize** — a browser tab opens once to
+   log in to your Retool org; the token is cached for next time.
+6. **Browse** to your apps repo folder → **Scan** → click **Run** on an app.
+   It opens on its own port. Your MCP URL and repo dir are remembered for next time.
 
-Prefer the terminal? Skip the panel and run one app directly:
+Prefer the terminal? Provide both the app and the MCP URL:
 ```
-pnpm start -- --app "/abs/path/to/retool-ops/apps-v2/<Group>/<App>"
+pnpm start -- --app "/abs/path/to/apps-v2/<Group>/<App>" --mcp-url "https://<your-org>.retool.com/mcp"
 ```
+(Once set in the panel, the saved URL is reused, so `--mcp-url` becomes optional.)
 
 ## Control panel (easiest start)
 
@@ -44,19 +46,21 @@ pnpm start -- --app "/abs/path/to/retool-ops/apps-v2/<Group>/<App>"
     pnpm panel                # http://localhost:5170
 
 A small web UI to: set the **MCP URL** + authorize (and see auth/connection
-status), list the org's **resources** (with a "queryable" flag), **scan** a
-`retool-ops` directory for apps, and **run / stop** any app with one click
-(optionally with writes). Each app launches on its own port. Everything below is
+status), list your org's **resources** (with a "queryable" flag), **scan** an
+apps repo directory for apps, and **run / stop** any app with one click
+(optionally with writes). Each app launches on its own port. Everything is
 also available from the CLI.
 
-## Run
+## Run (CLI)
 
-    pnpm install              # one-time: the tool's own deps
-    pnpm start                # read-only (default) — the Shift Utilization Dashboard
-    pnpm dev                  # same, but auto-restarts on backend/tool changes
-    pnpm start -- --writes    # allow INSERT/UPDATE/DELETE via the MCP
+    pnpm install                                   # one-time: the tool's own deps
+    pnpm start -- --app "/path/to/app"             # read-only (default)
+    pnpm dev   -- --app "/path/to/app"             # same, but auto-restarts on changes
+    pnpm start -- --app "/path/to/app" --writes    # allow INSERT/UPDATE/DELETE via the MCP
 
-`pnpm dev` accepts the same flags: `pnpm dev -- --app "…" --port 5175 --writes`.
+`--app` is required (or use the panel). The MCP URL comes from `--mcp-url`, the
+`RETOOL_MCP_URL` env var, or whatever you saved in the panel. `--port` picks the
+port (default 5174).
 
 ### Reloading on changes
 
@@ -66,9 +70,13 @@ also available from the CLI.
   tool's own `src/**` run in the Node process. Under `pnpm dev` they trigger an
   automatic server restart; under `pnpm start` you restart manually.
 
-First run opens a browser for Retool MCP OAuth; tokens cache under `.mcp-auth/`
-and refresh automatically (later runs don't prompt). You need access to the
-Retool org (`ops.wayve.retool.com`) to authorize.
+### Auth
+
+When you first connect to a given MCP URL, a browser tab opens to log in to that
+Retool org. The token is cached per-host under `.mcp-auth/<host>/` and refreshes
+automatically, so later runs don't prompt. In the panel this happens when you
+click **Connect / Authorize**; from the CLI it happens on first run. You need
+access to whichever Retool org the MCP URL points at.
 
 ## Adding another app (one command)
 

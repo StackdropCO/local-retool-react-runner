@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_APP_DIR, MCP_URL } from './paths.js'
+import { MCP_URL } from './paths.js'
+import { readConfig } from './config.js'
 import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
@@ -12,19 +13,25 @@ function arg(name: string, fallback?: string) {
 const has = (name: string) => process.argv.includes(`--${name}`)
 
 async function main() {
-  const appDir = arg('app', DEFAULT_APP_DIR)!
+  const appDir = arg('app', '')!
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
-  if (!existsSync(join(appDir, 'frontend', 'App.tsx'))) {
+  if (!appDir || !existsSync(join(appDir, 'frontend', 'App.tsx'))) {
     console.error(
-      `[runner] no app found at:\n  ${appDir}\n` +
-        `Pass --app "/abs/path/to/an/apps-v2/app" (the dir containing frontend/ and backend/).`,
+      `[runner] no app found${appDir ? ` at:\n  ${appDir}` : ' (no --app given)'}\n` +
+        `Pass --app "/abs/path/to/an/apps-v2/app", or use the panel: pnpm panel`,
     )
     process.exit(1)
   }
+  // MCP URL is per-user: flag > saved config > env. No org default.
+  const mcpUrl = arg('mcp-url', readConfig().mcpUrl || MCP_URL)!
+  if (!mcpUrl) {
+    console.error('[runner] no MCP URL. Pass --mcp-url "https://your-org.retool.com/mcp", set RETOOL_MCP_URL, or configure it in the panel (pnpm panel).')
+    process.exit(1)
+  }
   console.log(`[runner] app=${appDir}`)
+  console.log(`[runner] mcp=${mcpUrl}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
-  const mcpUrl = arg('mcp-url', MCP_URL)!
   ensureFrontendDeps(appDir)
   const mcp = await connectMcp(mcpUrl)
   const { url } = await startServer({ appDir, port, writes, mcp })

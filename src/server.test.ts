@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { discoverEndpoints } from './server.js'
-import { DEFAULT_APP_DIR } from './paths.js'
 
-describe.skipIf(!existsSync(DEFAULT_APP_DIR))('discoverEndpoints (needs retool-ops checked out)', () => {
-  it('finds default-export endpoints and excludes shared helpers', () => {
-    const eps = discoverEndpoints(DEFAULT_APP_DIR)
-    expect(eps).toContain('getShiftTimeline')
-    expect(eps).toContain('classifyGap')
+const APP = process.env.RETOOL_TEST_APP || ''
+
+describe.skipIf(!APP || !existsSync(join(APP, 'backend')))('discoverEndpoints (set RETOOL_TEST_APP to run)', () => {
+  it('finds default-export endpoints and excludes non-endpoint helpers', () => {
+    const eps = discoverEndpoints(APP)
+    expect(eps.length).toBeGreaterThan(0)
+    // shared helper modules (no default export) must be excluded
     expect(eps).not.toContain('shared')
-    expect(eps).not.toContain('shiftBands')
   })
 })
