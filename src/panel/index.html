@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local MCP Runner — Control Panel</title>
+    <style>
+      :root {
+        --navy: #14284b;
+        --navy-700: #1d3766;
+        --navy-050: #eef2f8;
+        --ink: #1c2530;
+        --muted: #667080;
+        --line: #e2e6ec;
+        --bg: #f6f7f9;
+        --ok: #1f7a4d;
+        --warn: #9a6b00;
+        --err: #b3261e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.45;
+      }
+      header {
+        background: var(--navy);
+        color: #fff;
+        padding: 18px 24px;
+      }
+      header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 0.2px; }
+      header p { margin: 3px 0 0; font-size: 13px; color: #b9c4d8; }
+      main { max-width: 900px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+      .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 18px 20px; }
+      .card h2 {
+        margin: 0 0 14px; font-size: 13px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: 0.6px; color: var(--navy); border-bottom: 1px solid var(--line); padding-bottom: 8px;
+      }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+      input[type="text"] {
+        width: 100%; padding: 8px 10px; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff;
+      }
+      input[type="text"]:focus { outline: none; border-color: var(--navy-700); }
+      .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+      .row .grow { flex: 1; min-width: 240px; }
+      button {
+        font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 4px; cursor: pointer;
+        border: 1px solid var(--navy); background: var(--navy); color: #fff;
+      }
+      button:hover { background: var(--navy-700); border-color: var(--navy-700); }
+      button.secondary { background: #fff; color: var(--navy); }
+      button.secondary:hover { background: var(--navy-050); }
+      button.small { padding: 5px 10px; font-size: 12px; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #c4ccd6; flex: none; }
+      .dot.ok { background: var(--ok); }
+      .dot.warn { background: var(--warn); }
+      .dot.err { background: var(--err); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; }
+      td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); }
+      .tag.yes { color: var(--ok); border-color: #bfe0cd; background: #f0f8f3; }
+      .tag.maybe { color: var(--warn); border-color: #e8d9a8; background: #fbf6e8; }
+      .app { border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; margin-bottom: 10px; }
+      .app .name { font-weight: 600; font-size: 14px; }
+      .app .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+      .app .actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .check { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+      select.branch { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; max-width: 220px; }
+      .msg { font-size: 12px; margin-top: 8px; min-height: 16px; }
+      .msg.err { color: var(--err); }
+      .msg.ok { color: var(--ok); }
+      .empty { color: var(--muted); font-size: 13px; }
+      a { color: var(--navy-700); }
+      .browser { margin-top: 12px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+      .browser .bar {
+        display: flex; align-items: center; gap: 10px; justify-content: space-between;
+        padding: 8px 12px; background: var(--navy-050); border-bottom: 1px solid var(--line);
+      }
+      .browser .cwd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--navy); word-break: break-all; }
+      .browser .list { max-height: 260px; overflow: auto; }
+      .browser .item {
+        display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 13px;
+        cursor: pointer; border-bottom: 1px solid var(--line);
+      }
+      .browser .item:last-child { border-bottom: 0; }
+      .browser .item:hover { background: var(--navy-050); }
+      .browser .item .ico { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
+      .browser .item.repo { color: var(--navy); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Local MCP Runner</h1>
+      <p>Run Retool React apps locally against real resources via the Retool MCP.</p>
+    </header>
+    <main>
+      <!-- 1. MCP connection -->
+      <section class="card">
+        <h2>1 · MCP connection</h2>
+        <div class="row">
+          <div class="grow">
+            <label for="mcpUrl">MCP endpoint URL</label>
+            <input id="mcpUrl" type="text" placeholder="https://your-org.retool.com/mcp" />
+          </div>
+          <button class="secondary" id="saveUrl">Save URL</button>
+          <button id="auth">Connect / Authorize</button>
+        </div>
+        <div class="msg" id="connMsg"></div>
+        <div style="margin-top:6px">
+          <span class="status"><span class="dot" id="dotCached"></span><span id="cachedTxt">token: unknown</span></span>
+          &nbsp;&nbsp;
+          <span class="status"><span class="dot" id="dotConn"></span><span id="connTxt">not connected</span></span>
+        </div>
+      </section>
+
+      <!-- 2. Resources -->
+      <section class="card">
+        <h2>2 · Resources</h2>
+        <button class="secondary small" id="loadRes">Load readable resources</button>
+        <div class="msg" id="resMsg"></div>
+        <div id="resWrap"></div>
+      </section>
+
+      <!-- 3. Apps -->
+      <section class="card">
+        <h2>3 · Apps</h2>
+        <div class="row">
+          <div class="grow">
+            <label for="repoDir">retool-ops repo directory</label>
+            <input id="repoDir" type="text" placeholder="/Users/you/Projects/retool-ops" />
+          </div>
+          <button class="secondary" id="browse">Browse…</button>
+          <button id="scan">Scan for apps</button>
+        </div>
+        <div id="browser" class="browser" hidden></div>
+        <div class="msg" id="scanMsg"></div>
+        <div id="apps"></div>
+      </section>
+
+      <!-- 4. Running -->
+      <section class="card">
+        <h2>4 · Running</h2>
+        <div id="running"><span class="empty">Nothing running.</span></div>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id)
+      const api = async (path, opts) => {
+        const res = await fetch(path, opts)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json.error || ('HTTP ' + res.status))
+        return json
+      }
+      const setMsg = (el, text, kind) => { el.className = 'msg ' + (kind || ''); el.textContent = text || '' }
+
+      async function refreshStatus() {
+        const s = await api('/api/status')
+        $('mcpUrl').value = $('mcpUrl').value || s.mcpUrl
+        if (s.repoDir && !$('repoDir').value) $('repoDir').value = s.repoDir
+        $('dotCached').className = 'dot ' + (s.cachedAuth ? 'ok' : 'warn')
+        $('cachedTxt').textContent = s.cachedAuth ? 'token cached' : 'no token yet'
+        $('dotConn').className = 'dot ' + (s.connected ? 'ok' : '')
+        $('connTxt').textContent = s.connected ? 'connected' : 'not connected'
+      }
+
+      $('saveUrl').onclick = async () => {
+        try {
+          await api('/api/mcp-url', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mcpUrl: $('mcpUrl').value.trim() }) })
+          setMsg($('connMsg'), 'URL saved.', 'ok')
+          refreshStatus()
+        } catch (e) { setMsg($('connMsg'), e.message, 'err') }
+      }
+
+      $('auth').onclick = async () => {
+        setMsg($('connMsg'), 'Connecting… a browser tab may open to authorize.', '')
+        $('auth').disabled = true
+        try {
+          await api('/api/auth', { method: 'POST' })
+          setMsg($('connMsg'), 'Connected.', 'ok')
+          refreshStatus()
+        } catch (e) { setMsg($('connMsg'), e.message, 'err') }
+        finally { $('auth').disabled = false }
+      }
+
+      $('loadRes').onclick = async () => {
+        setMsg($('resMsg'), 'Loading…', '')
+        try {
+          const { resources } = await api('/api/resources')
+          setMsg($('resMsg'), resources.length + ' resource(s).', '')
+          $('resWrap').innerHTML =
+            '<table><thead><tr><th>Name</th><th>Type</th><th>Queryable</th></tr></thead><tbody>' +
+            resources.map((r) => {
+              const badge = r.readable
+                ? (r.note ? '<span class="tag maybe">maybe · ' + r.note + '</span>' : '<span class="tag yes">yes</span>')
+                : '<span class="tag">no</span>'
+              return '<tr><td>' + esc(r.displayName) + '</td><td class="mono">' + esc(r.type) + '</td><td>' + badge + '</td></tr>'
+            }).join('') + '</tbody></table>'
+          refreshStatus() // resources connect lazily — reflect the now-open session
+        } catch (e) { setMsg($('resMsg'), e.message, 'err'); $('resWrap').innerHTML = '' }
+      }
+
+      const browser = $('browser')
+      $('browse').onclick = () => {
+        if (browser.hidden) { browser.hidden = false; openBrowser($('repoDir').value.trim() || '') }
+        else { browser.hidden = true }
+      }
+      async function openBrowser(dir) {
+        browser.innerHTML = '<div class="bar"><span class="empty">Loading…</span></div>'
+        let data
+        try { data = await api('/api/browse?dir=' + encodeURIComponent(dir)) }
+        catch (e) { browser.innerHTML = '<div class="bar"><span class="msg err">' + esc(e.message) + '</span></div>'; return }
+        const rows = []
+        if (data.parent !== null) rows.push('<div class="item" data-nav="' + esc(data.parent) + '"><span class="ico">↑</span> ..</div>')
+        for (const d of data.dirs) {
+          const child = data.dir.replace(/\/$/, '') + '/' + d
+          rows.push('<div class="item" data-nav="' + esc(child) + '"><span class="ico">▸</span>' + esc(d) + '</div>')
+        }
+        browser.innerHTML =
+          '<div class="bar"><span class="cwd">' + esc(data.dir) + '</span>' +
+          '<button class="small" data-use="' + esc(data.dir) + '">' + (data.isRepo ? 'Scan this repo' : 'Scan this folder') + '</button></div>' +
+          '<div class="list">' + (rows.join('') || '<div class="item empty">No subfolders</div>') + '</div>'
+      }
+      browser.addEventListener('click', (ev) => {
+        const nav = ev.target.closest('[data-nav]')
+        if (nav) return openBrowser(nav.getAttribute('data-nav'))
+        const use = ev.target.closest('[data-use]')
+        if (use) { $('repoDir').value = use.getAttribute('data-use'); browser.hidden = true; $('scan').click() }
+      })
+
+      $('scan').onclick = async () => {
+        setMsg($('scanMsg'), 'Scanning…', '')
+        try {
+          const { apps } = await api('/api/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repoDir: $('repoDir').value.trim() }) })
+          setMsg($('scanMsg'), apps.length + ' app(s) found.', '')
+          $('apps').innerHTML = apps.length ? apps.map(renderApp).join('') : '<span class="empty">No apps found under that directory.</span>'
+        } catch (e) { setMsg($('scanMsg'), e.message, 'err'); $('apps').innerHTML = '' }
+      }
+
+      function renderApp(a) {
+        const rid = 'w_' + btoa(a.path).replace(/[^a-z0-9]/gi, '')
+        const branches = a.branches && a.branches.length ? a.branches : (a.branch ? [a.branch] : [])
+        const branchSel = branches.length
+          ? '<select class="branch" id="br_' + rid + '">' +
+              branches.map((b) => '<option value="' + esc(b) + '"' + (b === a.branch ? ' selected' : '') + '>' + esc(b) + '</option>').join('') +
+            '</select>'
+          : '<span class="meta">not a git repo</span>'
+        return (
+          '<div class="app">' +
+          '<div class="name">' + esc(a.name) + '</div>' +
+          '<div class="meta">' + esc(a.group) + ' · ' + a.endpoints.length + ' endpoint(s) · ' +
+            a.resources.map((r) => esc(r.displayName)).join(', ') + '</div>' +
+          '<div class="meta mono">' + esc(a.path) + '</div>' +
+          '<div class="actions">' +
+          '<button class="small" data-run="' + esc(a.path) + '" data-name="' + esc(a.name) + '" data-w="' + rid + '">Run</button>' +
+          '<span class="check">branch ' + branchSel + '</span>' +
+          '<span class="check"><input type="checkbox" id="' + rid + '" /> enable writes</span>' +
+          '<span class="msg" id="msg_' + rid + '"></span>' +
+          '</div></div>'
+        )
+      }
+
+      document.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('[data-run]')
+        if (!btn) return
+        const appPath = btn.getAttribute('data-run')
+        const name = btn.getAttribute('data-name')
+        const rid = btn.getAttribute('data-w')
+        const writes = $(rid).checked
+        const branchEl = $('br_' + rid)
+        const branch = branchEl ? branchEl.value : ''
+        const msg = $('msg_' + rid)
+        btn.disabled = true
+        setMsg(msg, 'Starting' + (branch ? ' (' + branch + ')' : '') + '…', '')
+        try {
+          const r = await api('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ appPath, name, writes, branch }) })
+          setMsg(msg, (r.alreadyRunning ? 'Already running on :' : 'Running on :') + r.port + (r.branch ? ' · ' + r.branch : ''), 'ok')
+          refreshRunning()
+        } catch (e) { setMsg(msg, e.message, 'err') }
+        finally { btn.disabled = false }
+      })
+
+      async function refreshRunning() {
+        const { apps } = await api('/api/running')
+        $('running').innerHTML = apps.length
+          ? apps.map((a) =>
+              '<div class="app"><div class="name">' + esc(a.name) + (a.branch ? ' · <span class="tag">' + esc(a.branch) + '</span>' : '') + (a.writes ? ' · <span class="tag maybe">writes</span>' : '') + '</div>' +
+              '<div class="actions"><a href="' + a.url + '" target="_blank"><button class="small secondary">Open ' + a.url + '</button></a>' +
+              '<button class="small" data-stop="' + a.port + '">Stop</button></div></div>'
+            ).join('')
+          : '<span class="empty">Nothing running.</span>'
+      }
+
+      document.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('[data-stop]')
+        if (!btn) return
+        await api('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port: Number(btn.getAttribute('data-stop')) }) }).catch(() => {})
+        refreshRunning()
+      })
+
+      function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])) }
+
+      refreshStatus()
+      refreshRunning()
+    </script>
+  </body>
+</html>
