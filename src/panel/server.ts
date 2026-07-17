@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { readFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
@@ -85,10 +86,20 @@ export function startPanel(port: number) {
   })
 
   app.post('/api/scan', (req, res) => {
-    const repoDir = String(req.body?.repoDir || '').trim()
-    if (!repoDir) return res.status(400).json({ error: 'repoDir required' })
+    const raw = String(req.body?.repoDir || '').trim()
+    if (!raw) return res.status(400).json({ error: 'repoDir required' })
+    // Be forgiving: expand ~, and try the path as-is or with a leading slash
+    // (users often paste "Users/…" without the leading "/").
+    const candidates = [
+      raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw,
+      isAbsolute(raw) ? raw : '/' + raw.replace(/^\/+/, ''),
+    ]
+    const repoDir = candidates.find((p) => existsSync(p))
+    if (!repoDir) {
+      return res.status(400).json({ error: `directory not found: ${raw} (use an absolute path, e.g. /Users/you/Projects/retool-ops)` })
+    }
     try {
-      res.json({ apps: scanApps(repoDir) })
+      res.json({ apps: scanApps(repoDir), repoDir })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
     }
