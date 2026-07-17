@@ -72,6 +72,7 @@
       .app .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
       .app .actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       .check { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+      select.branch { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; max-width: 220px; }
       .msg { font-size: 12px; margin-top: 8px; min-height: 16px; }
       .msg.err { color: var(--err); }
       .msg.ok { color: var(--ok); }
@@ -245,6 +246,12 @@
 
       function renderApp(a) {
         const rid = 'w_' + btoa(a.path).replace(/[^a-z0-9]/gi, '')
+        const branches = a.branches && a.branches.length ? a.branches : (a.branch ? [a.branch] : [])
+        const branchSel = branches.length
+          ? '<select class="branch" id="br_' + rid + '">' +
+              branches.map((b) => '<option value="' + esc(b) + '"' + (b === a.branch ? ' selected' : '') + '>' + esc(b) + '</option>').join('') +
+            '</select>'
+          : '<span class="meta">not a git repo</span>'
         return (
           '<div class="app">' +
           '<div class="name">' + esc(a.name) + '</div>' +
@@ -253,6 +260,7 @@
           '<div class="meta mono">' + esc(a.path) + '</div>' +
           '<div class="actions">' +
           '<button class="small" data-run="' + esc(a.path) + '" data-name="' + esc(a.name) + '" data-w="' + rid + '">Run</button>' +
+          '<span class="check">branch ' + branchSel + '</span>' +
           '<span class="check"><input type="checkbox" id="' + rid + '" /> enable writes</span>' +
           '<span class="msg" id="msg_' + rid + '"></span>' +
           '</div></div>'
@@ -264,13 +272,16 @@
         if (!btn) return
         const appPath = btn.getAttribute('data-run')
         const name = btn.getAttribute('data-name')
-        const writes = $(btn.getAttribute('data-w')).checked
-        const msg = $('msg_' + btn.getAttribute('data-w'))
+        const rid = btn.getAttribute('data-w')
+        const writes = $(rid).checked
+        const branchEl = $('br_' + rid)
+        const branch = branchEl ? branchEl.value : ''
+        const msg = $('msg_' + rid)
         btn.disabled = true
-        setMsg(msg, 'Starting…', '')
+        setMsg(msg, 'Starting' + (branch ? ' (' + branch + ')' : '') + '…', '')
         try {
-          const r = await api('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ appPath, name, writes }) })
-          setMsg(msg, (r.alreadyRunning ? 'Already running on :' : 'Running on :') + r.port, 'ok')
+          const r = await api('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ appPath, name, writes, branch }) })
+          setMsg(msg, (r.alreadyRunning ? 'Already running on :' : 'Running on :') + r.port + (r.branch ? ' · ' + r.branch : ''), 'ok')
           refreshRunning()
         } catch (e) { setMsg(msg, e.message, 'err') }
         finally { btn.disabled = false }
@@ -280,7 +291,7 @@
         const { apps } = await api('/api/running')
         $('running').innerHTML = apps.length
           ? apps.map((a) =>
-              '<div class="app"><div class="name">' + esc(a.name) + (a.writes ? ' · <span class="tag maybe">writes</span>' : '') + '</div>' +
+              '<div class="app"><div class="name">' + esc(a.name) + (a.branch ? ' · <span class="tag">' + esc(a.branch) + '</span>' : '') + (a.writes ? ' · <span class="tag maybe">writes</span>' : '') + '</div>' +
               '<div class="actions"><a href="' + a.url + '" target="_blank"><button class="small secondary">Open ' + a.url + '</button></a>' +
               '<button class="small" data-stop="' + a.port + '">Stop</button></div></div>'
             ).join('')

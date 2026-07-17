@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { currentBranch, listBranches } from './git.js'
 
 export type ScannedApp = {
   name: string
@@ -7,6 +8,8 @@ export type ScannedApp = {
   group: string
   endpoints: string[]
   resources: Array<{ displayName: string; type: string }>
+  branch: string | null
+  branches: string[]
 }
 
 // Walk up to `depth` levels under root, returning dirs that look like a Retool
@@ -78,6 +81,8 @@ export function scanApps(repoDir: string): ScannedApp[] {
         group: parts[parts.length - 2] ?? '',
         endpoints: endpointsOf(path),
         resources: Object.values(refs),
+        branch: currentBranch(path),
+        branches: listBranches(path),
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))

@@ -42,8 +42,10 @@ Then, in the browser:
    the token is cached.
 2. **Resources** — **Load readable resources** to see what your org exposes and which
    are queryable.
-3. **Apps** — **Browse…** to your apps repo, **Scan for apps**, then **Run** on any app
-   (tick *enable writes* only if you need to persist changes).
+3. **Apps** — **Browse…** to your apps repo, **Scan for apps**, choose a **branch** in
+   the dropdown next to the app, then **Run** (tick *enable writes* only if you need to
+   persist changes). Picking a non-current branch runs it from an isolated **git worktree**
+   under `.worktrees/` — your main checkout is never touched. CLI: `--branch <name>`.
 4. **Running** — Open / Stop each launched app. Each runs on its own port.
 
 Your MCP URL and repo directory are **remembered** across restarts.
@@ -142,7 +144,8 @@ useGetShiftTimeline().trigger({geo:'lhr'}).result
 | `server.ts` | Vite middleware + `/rpc/:endpoint`; dep aliasing; endpoint discovery |
 | `index.ts` | Single-app CLI entry (`pnpm start`) |
 | `dev.ts` | Watch-mode launcher (restarts on backend/tool changes) |
-| `scan.ts` | Find apps under a repo dir (for the panel) |
+| `scan.ts` | Find apps under a repo dir (for the panel), with their branches |
+| `git.ts` | Branch listing + resolve a branch to an isolated git worktree |
 | `panel/server.ts` + `panel/index.html` | The control-panel API + UI |
 | `scripts/probe.ts` | Diagnostic: connect + `SELECT 1` |
 

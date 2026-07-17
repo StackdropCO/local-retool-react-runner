@@ -9,6 +9,7 @@ import { TOOL_ROOT, MCP_URL } from '../paths.js'
 import { connectMcp, hasCachedAuth, type McpClient } from '../mcpClient.js'
 import { scanApps } from '../scan.js'
 import { readConfig, writeConfig } from '../config.js'
+import { resolveAppForBranch } from '../git.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
@@ -26,7 +27,7 @@ const READABLE_TYPES = new Set([
   'restapi', // only if OpenAPI-annotated — flagged as "maybe" below
 ])
 
-type Running = { appPath: string; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
+type Running = { appPath: string; runDir: string; branch: string; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
 
 export function startPanel(port: number) {
   let mcpUrl = readConfig().mcpUrl || MCP_URL
@@ -146,18 +147,26 @@ export function startPanel(port: number) {
 
   app.post('/api/run', async (req, res) => {
     const appPath = String(req.body?.appPath || '').trim()
+    const branch = String(req.body?.branch || '').trim()
     const name = String(req.body?.name || appPath.split('/').pop() || 'app')
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
     if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first (section 1), then Save URL.' })
-    // Already running this app? Reuse it instead of launching a duplicate.
-    const existing = [...running.values()].find((r) => r.appPath === appPath)
+    // Resolve the branch to an isolated worktree (leaves the main checkout untouched).
+    let runDir = appPath
+    try {
+      runDir = resolveAppForBranch(appPath, branch)
+    } catch (e: any) {
+      return res.status(400).json({ error: `branch "${branch}": ${String(e?.message ?? e)}` })
+    }
+    // Already running this app+branch? Reuse it instead of launching a duplicate.
+    const existing = [...running.values()].find((r) => r.appPath === appPath && r.branch === branch)
     if (existing) {
-      return res.json({ port: existing.port, url: existing.url, name: existing.name, writes: existing.writes, alreadyRunning: true })
+      return res.json({ port: existing.port, url: existing.url, name: existing.name, branch: existing.branch, writes: existing.writes, alreadyRunning: true })
     }
     const p = await nextPort()
     // Launch in watch mode (dev.ts) so backend/query edits auto-reload the app.
-    const args = ['src/dev.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
+    const args = ['src/dev.ts', '--app', runDir, '--port', String(p), '--mcp-url', mcpUrl]
     if (writes) args.push('--writes')
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
     const url = `http://localhost:${p}`
@@ -171,8 +180,8 @@ export function startPanel(port: number) {
       const s = b.toString()
       process.stdout.write(`[app:${p}] ${s}`)
       if (s.includes('serving')) {
-        running.set(p, { appPath, name, port: p, url, writes, child })
-        done({ port: p, url, name, writes })
+        running.set(p, { appPath, runDir, branch, name, port: p, url, writes, child })
+        done({ port: p, url, name, branch, writes })
       }
     })
     child.stderr.on('data', (b) => process.stderr.write(`[app:${p}] ${b}`))
@@ -180,12 +189,12 @@ export function startPanel(port: number) {
       running.delete(p)
       done({ error: `runner exited (code ${code}) before serving` }, 400)
     })
-    setTimeout(() => done({ port: p, url, name, writes, warning: 'started; not confirmed serving yet' }), 45000)
+    setTimeout(() => done({ port: p, url, name, branch, writes, warning: 'started; not confirmed serving yet' }), 45000)
   })
 
   app.get('/api/running', (_req, res) => {
     res.json({
-      apps: [...running.values()].map(({ name, appPath, port, url, writes }) => ({ name, appPath, port, url, writes })),
+      apps: [...running.values()].map(({ name, appPath, branch, port, url, writes }) => ({ name, appPath, branch, port, url, writes })),
     })
   })
 

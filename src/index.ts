@@ -5,6 +5,7 @@ import { readConfig } from './config.js'
 import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
+import { resolveAppForBranch } from './git.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -13,9 +14,14 @@ function arg(name: string, fallback?: string) {
 const has = (name: string) => process.argv.includes(`--${name}`)
 
 async function main() {
-  const appDir = arg('app', '')!
+  let appDir = arg('app', '')!
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
+  const branch = arg('branch', '')!
+  if (branch && appDir) {
+    appDir = resolveAppForBranch(appDir, branch) // isolated worktree; leaves main checkout alone
+    console.log(`[runner] branch=${branch}`)
+  }
   if (!appDir || !existsSync(join(appDir, 'frontend', 'App.tsx'))) {
     console.error(
       `[runner] no app found${appDir ? ` at:\n  ${appDir}` : ' (no --app given)'}\n` +

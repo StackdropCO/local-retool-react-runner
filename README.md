@@ -31,8 +31,14 @@ own **apps repo directory** (both are saved after first use).
 5. **In the panel:** enter **your** MCP URL (e.g. `https://<your-org>.retool.com/mcp`),
    click **Save URL**, then **Connect / Authorize** — a browser tab opens once to
    log in to your Retool org; the token is cached for next time.
-6. **Browse** to your apps repo folder → **Scan** → click **Run** on an app.
-   It opens on its own port. Your MCP URL and repo dir are remembered for next time.
+6. **Browse** to your apps repo folder → **Scan** → pick a **branch** in the dropdown
+   next to the app (defaults to the checked-out one) → click **Run**. It opens on its
+   own port. Your MCP URL and repo dir are remembered for next time.
+
+**Branches:** running a branch other than the one currently checked out uses an isolated
+**git worktree** (created under `.worktrees/`, reused after that) — so it reflects that
+branch **without touching your working tree or requiring a `git checkout`**. From the CLI:
+`--branch <name>`.
 
 Prefer the terminal? Provide both the app and the MCP URL:
 ```
