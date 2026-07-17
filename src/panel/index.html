@@ -201,6 +201,7 @@
                 : '<span class="tag">no</span>'
               return '<tr><td>' + esc(r.displayName) + '</td><td class="mono">' + esc(r.type) + '</td><td>' + badge + '</td></tr>'
             }).join('') + '</tbody></table>'
+          refreshStatus() // resources connect lazily — reflect the now-open session
         } catch (e) { setMsg($('resMsg'), e.message, 'err'); $('resWrap').innerHTML = '' }
       }
 
