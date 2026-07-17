@@ -15,7 +15,18 @@ Default target: `retool-ops/apps-v2/Stackdrop-Hangar/Shift Utilization Dashboard
 
     pnpm install              # one-time: the tool's own deps
     pnpm start                # read-only (default) — the Shift Utilization Dashboard
+    pnpm dev                  # same, but auto-restarts on backend/tool changes
     pnpm start -- --writes    # allow INSERT/UPDATE/DELETE via the MCP
+
+`pnpm dev` accepts the same flags: `pnpm dev -- --app "…" --port 5175 --writes`.
+
+### Reloading on changes
+
+- **Frontend** edits (the app's `App.tsx`, `components/`, `lib/`, CSS) hot-reload
+  in the browser via Vite — no restart.
+- **Backend** edits (the app's `backend/**/*.ts` — queries, endpoints) and the
+  tool's own `src/**` run in the Node process. Under `pnpm dev` they trigger an
+  automatic server restart; under `pnpm start` you restart manually.
 
 First run opens a browser for Retool MCP OAuth; tokens cache under `.mcp-auth/`
 and refresh automatically (later runs don't prompt). You need access to the

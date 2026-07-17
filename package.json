@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "probe": "tsx src/scripts/probe.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "dev": "tsx src/dev.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
