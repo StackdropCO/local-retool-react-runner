@@ -270,7 +270,7 @@
         setMsg(msg, 'Starting…', '')
         try {
           const r = await api('/api/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ appPath, name, writes }) })
-          setMsg(msg, 'Running on :' + r.port, 'ok')
+          setMsg(msg, (r.alreadyRunning ? 'Already running on :' : 'Running on :') + r.port, 'ok')
           refreshRunning()
         } catch (e) { setMsg(msg, e.message, 'err') }
         finally { btn.disabled = false }

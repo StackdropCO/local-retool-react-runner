@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer as createNetServer } from 'node:net'
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname, isAbsolute } from 'node:path'
@@ -126,18 +127,32 @@ export function startPanel(port: number) {
     }
   })
 
-  const nextPort = () => {
+  // True only if nothing else on this machine is listening on the port.
+  const portFree = (p: number) =>
+    new Promise<boolean>((resolve) => {
+      const s = createNetServer()
+      s.once('error', () => resolve(false))
+      s.once('listening', () => s.close(() => resolve(true)))
+      s.listen(p, '0.0.0.0')
+    })
+
+  const nextPort = async () => {
     let p = 5174
-    while (running.has(p)) p++
+    while (running.has(p) || !(await portFree(p))) p++ // skip ours AND any OS-level orphan
     return p
   }
 
-  app.post('/api/run', (req, res) => {
+  app.post('/api/run', async (req, res) => {
     const appPath = String(req.body?.appPath || '').trim()
     const name = String(req.body?.name || appPath.split('/').pop() || 'app')
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
-    const p = nextPort()
+    // Already running this app? Reuse it instead of launching a duplicate.
+    const existing = [...running.values()].find((r) => r.appPath === appPath)
+    if (existing) {
+      return res.json({ port: existing.port, url: existing.url, name: existing.name, writes: existing.writes, alreadyRunning: true })
+    }
+    const p = await nextPort()
     const args = ['src/index.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
     if (writes) args.push('--writes')
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
