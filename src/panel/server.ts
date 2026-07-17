@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -80,6 +80,23 @@ export function startPanel(port: number) {
         }))
         .sort((a, b) => a.displayName.localeCompare(b.displayName))
       res.json({ resources })
+    } catch (e: any) {
+      res.status(400).json({ error: String(e?.message ?? e) })
+    }
+  })
+
+  // Directory browser: list subdirectories of `dir` (defaults to home).
+  app.get('/api/browse', (req, res) => {
+    const raw = String(req.query.dir || '').trim()
+    const dir = !raw ? homedir() : raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw
+    if (!existsSync(dir)) return res.status(400).json({ error: `not found: ${dir}` })
+    try {
+      const dirs = readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+        .map((d) => d.name)
+        .sort((a, b) => a.localeCompare(b))
+      const parent = dirname(dir)
+      res.json({ dir, parent: parent === dir ? null : parent, dirs, isRepo: existsSync(join(dir, 'apps-v2')) })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
     }

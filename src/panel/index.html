@@ -77,6 +77,21 @@
       .msg.ok { color: var(--ok); }
       .empty { color: var(--muted); font-size: 13px; }
       a { color: var(--navy-700); }
+      .browser { margin-top: 12px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+      .browser .bar {
+        display: flex; align-items: center; gap: 10px; justify-content: space-between;
+        padding: 8px 12px; background: var(--navy-050); border-bottom: 1px solid var(--line);
+      }
+      .browser .cwd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--navy); word-break: break-all; }
+      .browser .list { max-height: 260px; overflow: auto; }
+      .browser .item {
+        display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 13px;
+        cursor: pointer; border-bottom: 1px solid var(--line);
+      }
+      .browser .item:last-child { border-bottom: 0; }
+      .browser .item:hover { background: var(--navy-050); }
+      .browser .item .ico { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; }
+      .browser .item.repo { color: var(--navy); font-weight: 600; }
     </style>
   </head>
   <body>
@@ -120,8 +135,10 @@
             <label for="repoDir">retool-ops repo directory</label>
             <input id="repoDir" type="text" placeholder="/Users/you/Projects/retool-ops" />
           </div>
+          <button class="secondary" id="browse">Browse…</button>
           <button id="scan">Scan for apps</button>
         </div>
+        <div id="browser" class="browser" hidden></div>
         <div class="msg" id="scanMsg"></div>
         <div id="apps"></div>
       </section>
@@ -186,6 +203,34 @@
             }).join('') + '</tbody></table>'
         } catch (e) { setMsg($('resMsg'), e.message, 'err'); $('resWrap').innerHTML = '' }
       }
+
+      const browser = $('browser')
+      $('browse').onclick = () => {
+        if (browser.hidden) { browser.hidden = false; openBrowser($('repoDir').value.trim() || '') }
+        else { browser.hidden = true }
+      }
+      async function openBrowser(dir) {
+        browser.innerHTML = '<div class="bar"><span class="empty">Loading…</span></div>'
+        let data
+        try { data = await api('/api/browse?dir=' + encodeURIComponent(dir)) }
+        catch (e) { browser.innerHTML = '<div class="bar"><span class="msg err">' + esc(e.message) + '</span></div>'; return }
+        const rows = []
+        if (data.parent !== null) rows.push('<div class="item" data-nav="' + esc(data.parent) + '"><span class="ico">↑</span> ..</div>')
+        for (const d of data.dirs) {
+          const child = data.dir.replace(/\/$/, '') + '/' + d
+          rows.push('<div class="item" data-nav="' + esc(child) + '"><span class="ico">▸</span>' + esc(d) + '</div>')
+        }
+        browser.innerHTML =
+          '<div class="bar"><span class="cwd">' + esc(data.dir) + '</span>' +
+          '<button class="small" data-use="' + esc(data.dir) + '">' + (data.isRepo ? 'Scan this repo' : 'Scan this folder') + '</button></div>' +
+          '<div class="list">' + (rows.join('') || '<div class="item empty">No subfolders</div>') + '</div>'
+      }
+      browser.addEventListener('click', (ev) => {
+        const nav = ev.target.closest('[data-nav]')
+        if (nav) return openBrowser(nav.getAttribute('data-nav'))
+        const use = ev.target.closest('[data-use]')
+        if (use) { $('repoDir').value = use.getAttribute('data-use'); browser.hidden = true; $('scan').click() }
+      })
 
       $('scan').onclick = async () => {
         setMsg($('scanMsg'), 'Scanning…', '')
