@@ -43,9 +43,8 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('Connected')).toBeInTheDocument()
-    expect(screen.getByText('Token cached')).toBeInTheDocument()
-    expect(screen.getByText('No apps running')).toBeInTheDocument()
+    expect(await screen.findByText('example.retool.com')).toBeInTheDocument()
+    expect(screen.getByText('connected · 0 apps running')).toBeInTheDocument()
     expect(api.status).toHaveBeenCalledOnce()
     expect(api.running).toHaveBeenCalledOnce()
   })
@@ -55,10 +54,10 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    const repoInput = await screen.findByLabelText('Apps repository')
+    const repoInput = await screen.findByLabelText('Apps repository directory')
     await user.clear(repoInput)
     await user.type(repoInput, '/repo')
-    await user.click(screen.getByRole('button', { name: 'Scan apps' }))
+    await user.click(screen.getByRole('button', { name: 'Scan' }))
     await user.selectOptions(await screen.findByLabelText('Branch for Example App'), 'feature')
     await user.click(screen.getByRole('button', { name: 'Run Example App' }))
 
@@ -75,12 +74,12 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    await screen.findByLabelText('Apps repository')
-    await user.click(screen.getByRole('button', { name: 'Scan apps' }))
+    await screen.findByLabelText('Apps repository directory')
+    await user.click(screen.getByRole('button', { name: 'Scan' }))
     const writeSwitch = await screen.findByRole('switch', { name: 'Enable writes for Example App' })
     await user.click(writeSwitch)
 
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('production data')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('production')
     expect(writeSwitch).toHaveAttribute('aria-checked', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Enable writes' }))

@@ -77,14 +77,14 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
   return (
     <div className="min-h-screen">
       <AppHeader status={status} runningCount={running.length} loading={statusLoading} />
-      <main className="mx-auto max-w-[1440px] px-5 py-6 lg:px-8">
+      <main className="mx-auto max-w-[1200px] px-6 py-5">
         {statusError && (
-          <Alert variant="destructive" className="mb-5">
+          <Alert variant="destructive" className="mb-4">
             <AlertDescription>Unable to load panel status: {statusError}</AlertDescription>
           </Alert>
         )}
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="space-y-4">
             <ConnectionCard status={status} onSave={saveMcpUrl} onAuthorize={authorize} />
             <RepositoryCard api={api} initialRepoDir={status?.repoDir || ''} onScan={scan} />
             <DiscoveredApps apps={apps} onRun={run} />
