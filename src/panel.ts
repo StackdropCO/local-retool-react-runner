@@ -5,4 +5,4 @@ function arg(name: string, fallback: string): string {
   return i >= 0 ? process.argv[i + 1] : fallback
 }
 
-startPanel(Number(arg('port', '5170')))
+await startPanel(Number(arg('port', '5170')))

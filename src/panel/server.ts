@@ -1,10 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer as createNetServer } from 'node:net'
-import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
 import express from 'express'
+import { createServer as createViteServer } from 'vite'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
 import { connectMcp, hasCachedAuth, type McpClient } from '../mcpClient.js'
 import { scanApps } from '../scan.js'
@@ -29,15 +32,19 @@ const READABLE_TYPES = new Set([
 
 type Running = { appPath: string; runDir: string; branch: string; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
 
-export function startPanel(port: number) {
+export type PanelServer = {
+  port: number
+  url: string
+  close(): Promise<void>
+}
+
+export async function createPanelServer(port: number): Promise<PanelServer> {
   let mcpUrl = readConfig().mcpUrl || MCP_URL
   let mcp: McpClient | null = null
   const running = new Map<number, Running>()
 
   const app = express()
   app.use(express.json())
-
-  app.get('/', (_req, res) => res.type('html').send(readFileSync(join(HERE, 'index.html'), 'utf8')))
 
   app.get('/api/status', (_req, res) => {
     res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl), connected: !!mcp, repoDir: readConfig().repoDir || '' })
@@ -207,10 +214,38 @@ export function startPanel(port: number) {
     res.json({ stopped: p })
   })
 
-  const server = app.listen(port, () => console.log(`[panel] control panel: http://localhost:${port}`))
-  process.on('SIGINT', () => {
+  const vite = await createViteServer({
+    root: join(HERE, 'ui'),
+    appType: 'spa',
+    plugins: [react(), tailwindcss()],
+    server: { middlewareMode: true },
+  })
+  app.use(vite.middlewares)
+
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+    const listener = app.listen(port, () => resolve(listener))
+    listener.once('error', reject)
+  })
+  const address = server.address()
+  const actualPort = typeof address === 'object' && address ? address.port : port
+  const close = async () => {
     for (const r of running.values()) r.child.kill('SIGTERM')
-    server.close()
+    running.clear()
+    if (mcp) await mcp.close().catch(() => {})
+    await vite.close()
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()))
+    })
+  }
+
+  return { port: actualPort, url: `http://localhost:${actualPort}`, close }
+}
+
+export async function startPanel(port: number): Promise<void> {
+  const panel = await createPanelServer(port)
+  console.log(`[panel] control panel: ${panel.url}`)
+  process.once('SIGINT', async () => {
+    await panel.close()
     process.exit(0)
   })
 }
