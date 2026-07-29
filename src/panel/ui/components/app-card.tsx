@@ -109,4 +109,3 @@ export function AppCard({ app, onRun }: AppCardProps) {
     </Card>
   )
 }
-

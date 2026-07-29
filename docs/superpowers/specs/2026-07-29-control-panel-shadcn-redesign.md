@@ -1,7 +1,7 @@
 # Control Panel shadcn/ui Redesign
 
-**Date:** 2026-07-29  
-**Status:** Approved for implementation  
+**Date:** 2026-07-29
+**Status:** Approved for implementation
 **Scope:** The local runner control panel only
 
 ## Goal

@@ -26,4 +26,3 @@ export function DiscoveredApps({ apps, onRun }: DiscoveredAppsProps) {
     </section>
   )
 }
-

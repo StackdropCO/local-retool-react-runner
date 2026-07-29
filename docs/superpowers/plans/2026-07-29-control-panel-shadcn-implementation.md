@@ -76,7 +76,7 @@ describe('panel API', () => {
 
 - [ ] **Step 2: Run the tests and verify red**
 
-Run: `pnpm vitest run src/panel/ui/lib/api.test.ts`  
+Run: `pnpm vitest run src/panel/ui/lib/api.test.ts`
 Expected: FAIL because `./api` does not exist.
 
 - [ ] **Step 3: Implement types and API methods**
@@ -156,7 +156,7 @@ export const panelApi = createPanelApi()
 
 - [ ] **Step 4: Run API tests**
 
-Run: `pnpm vitest run src/panel/ui/lib/api.test.ts`  
+Run: `pnpm vitest run src/panel/ui/lib/api.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -212,7 +212,7 @@ it('serves the React panel through Vite middleware', () => {
 
 - [ ] **Step 2: Run the server test and verify red**
 
-Run: `pnpm vitest run src/server.test.ts`  
+Run: `pnpm vitest run src/server.test.ts`
 Expected: FAIL on the new Vite middleware assertions.
 
 - [ ] **Step 3: Install the UI and test dependencies**
@@ -362,7 +362,7 @@ it('requires confirmation before enabling writes', async () => {
 
 - [ ] **Step 3: Run workflow tests and verify red**
 
-Run: `pnpm vitest run src/panel/ui/PanelApp.test.tsx`  
+Run: `pnpm vitest run src/panel/ui/PanelApp.test.tsx`
 Expected: FAIL because `PanelApp` and its components do not exist.
 
 - [ ] **Step 4: Implement initial loading and header**
@@ -408,7 +408,7 @@ failure.
 
 - [ ] **Step 9: Run UI tests**
 
-Run: `pnpm vitest run src/panel/ui/PanelApp.test.tsx`  
+Run: `pnpm vitest run src/panel/ui/PanelApp.test.tsx`
 Expected: PASS.
 
 - [ ] **Step 10: Run the complete automated suite**
@@ -504,7 +504,7 @@ Expected: all commands exit zero.
 
 - [ ] **Step 2: Start the panel locally**
 
-Run: `pnpm panel -- --port 5171`  
+Run: `pnpm panel -- --port 5171`
 Expected: log prints `control panel: http://localhost:5171`.
 
 - [ ] **Step 3: Smoke-test the HTTP surface**

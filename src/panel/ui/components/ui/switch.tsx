@@ -14,4 +14,3 @@ function Switch({ className, ...props }: ComponentProps<typeof SwitchPrimitive.R
 }
 
 export { Switch }
-

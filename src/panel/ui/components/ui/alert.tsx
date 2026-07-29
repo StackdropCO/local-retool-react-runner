@@ -29,4 +29,3 @@ function AlertDescription({ className, ...props }: HTMLAttributes<HTMLDivElement
 }
 
 export { Alert, AlertTitle, AlertDescription }
-

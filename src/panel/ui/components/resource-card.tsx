@@ -63,4 +63,3 @@ export function ResourceCard({ api }: { api: PanelApi }) {
     </Card>
   )
 }
-

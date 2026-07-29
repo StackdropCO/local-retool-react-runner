@@ -46,4 +46,3 @@ export function AppHeader({ status, runningCount, loading }: AppHeaderProps) {
     </header>
   )
 }
-

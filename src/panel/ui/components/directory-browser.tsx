@@ -80,4 +80,3 @@ export function DirectoryBrowser({ api, open, initialDir, onOpenChange, onSelect
     </Dialog>
   )
 }
-

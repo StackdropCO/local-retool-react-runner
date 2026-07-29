@@ -75,4 +75,3 @@ export function RunningApps({ apps, loading, error, onStop }: RunningAppsProps) 
     </Card>
   )
 }
-

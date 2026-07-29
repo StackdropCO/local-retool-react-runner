@@ -86,4 +86,3 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
     </Card>
   )
 }
-

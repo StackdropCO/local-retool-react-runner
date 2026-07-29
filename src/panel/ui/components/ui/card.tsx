@@ -26,4 +26,3 @@ function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 }
 
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
-

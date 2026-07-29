@@ -15,4 +15,3 @@ function Input({ className, type, ...props }: InputHTMLAttributes<HTMLInputEleme
 }
 
 export { Input }
-

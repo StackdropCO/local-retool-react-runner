@@ -26,4 +26,3 @@ function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElemen
 }
 
 export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell }
-

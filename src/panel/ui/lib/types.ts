@@ -55,4 +55,3 @@ export interface RunResult {
   alreadyRunning?: boolean
   warning?: string
 }
-

@@ -77,4 +77,3 @@ export function RepositoryCard({ api, initialRepoDir, onScan }: RepositoryCardPr
     </>
   )
 }
-

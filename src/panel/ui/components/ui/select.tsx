@@ -45,4 +45,3 @@ function SelectItem({ className, children, ...props }: ComponentProps<typeof Sel
 }
 
 export { Select, SelectTrigger, SelectValue, SelectContent, SelectItem }
-

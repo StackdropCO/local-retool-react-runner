@@ -49,4 +49,3 @@ function DialogDescription({ className, ...props }: ComponentProps<typeof Dialog
 }
 
 export { Dialog, DialogTrigger, DialogClose, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription }
-
