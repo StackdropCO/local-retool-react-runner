@@ -14,7 +14,7 @@ own **apps repo directory** (both are saved after first use).
 
 ## Install (first time)
 
-1. **Get the code** — unzip `local-mcp-runner.zip` (or clone the repo), then:
+1. **Get the code** — clone or download the repository, then:
    ```
    cd local-mcp-runner
    ```
@@ -29,7 +29,7 @@ own **apps repo directory** (both are saved after first use).
    pnpm panel        # → http://localhost:5170
    ```
 5. **In the panel:** enter **your** MCP URL (e.g. `https://<your-org>.retool.com/mcp`),
-   click **Save URL**, then **Connect / Authorize** — a browser tab opens once to
+   click **Save URL**, then **Authorize** — a browser tab opens once to
    log in to your Retool org; the token is cached for next time.
 6. **Browse** to your apps repo folder → **Scan** → pick a **branch** in the dropdown
    next to the app (defaults to the checked-out one) → click **Run**. It opens on its
@@ -51,11 +51,11 @@ pnpm start -- --app "/abs/path/to/apps-v2/<Group>/<App>" --mcp-url "https://<you
     pnpm install
     pnpm panel                # http://localhost:5170
 
-A small web UI to: set the **MCP URL** + authorize (and see auth/connection
-status), list your org's **resources** (with a "queryable" flag), **scan** an
-apps repo directory for apps, and **run / stop** any app with one click
-(optionally with writes). Each app launches on its own port. Everything is
-also available from the CLI.
+A React and shadcn/ui control panel for setting the **MCP URL**, authorizing the
+local machine, inspecting queryable **resources**, scanning an apps repository,
+and running or stopping apps. Connection and process state stay visible in the
+header. Write access is disabled by default and requires an explicit warning
+confirmation. Everything is also available from the CLI.
 
 ## Run (CLI)
 
@@ -81,7 +81,7 @@ port (default 5174).
 When you first connect to a given MCP URL, a browser tab opens to log in to that
 Retool org. The token is cached per-host under `.mcp-auth/<host>/` and refreshes
 automatically, so later runs don't prompt. In the panel this happens when you
-click **Connect / Authorize**; from the CLI it happens on first run. You need
+click **Authorize**; from the CLI it happens on first run. You need
 access to whichever Retool org the MCP URL points at.
 
 ## Adding another app (one command)
@@ -101,11 +101,16 @@ The app's entry is always `frontend/App.tsx`; `orgTheme.css` is optional.
 - The app imports `./hooks/backend/shift`, which Retool normally generates. We
   serve it as an **in-memory Vite virtual module** — the hooks POST to
   `/rpc/:endpoint`.
-- `POST /rpc/:endpoint` runs the app's own `backend/shift/<endpoint>.ts` with the
-  resource globals injected: `databricks`, `lakebaseRetoolOltp`, `connectteamapi`.
+- `POST /rpc/:endpoint` runs the app's own `backend/<group>/<endpoint>.ts` with
+  the resource globals declared by that app injected at runtime.
 - Each global forwards its call into `retool_execute_resource_ts` over a
   standalone-OAuth MCP client. The result shape (`{ data: [...] }`) matches what
   the backend expects.
+
+For example, an app might call `sqlWarehouse.query(sql)`,
+`operationalDb.query(sql)`, or `businessApi.namespace.operation(...)`. Those
+names come from the app and MCP resource bindings; the runner does not bake in
+organization-specific resources.
 
 ## Query history
 
@@ -118,29 +123,14 @@ full, diffable history of what actually ran.
 
 Read-only is the default: any `INSERT/UPDATE/DELETE/...` is detected in the SQL
 shim and blocked **before** it reaches the MCP. Pass `--writes` to allow them
-(they hit production Lakebase — there is no sandbox).
+(these calls may affect production data; the runner does not provide a sandbox).
 
-## Status (verified 2026-07-17, live)
+## Compatibility
 
-Working end-to-end through the MCP connector:
-- OAuth connect + token refresh
-- Databricks reads (window query)
-- ConnectTeam REST (OpenAPI op `getShifts`) via the Proxy shim
-- Lakebase reads (gap classifications, reason codes)
-- Write-gating (INSERT blocked in read-only mode)
-- Query history logging
-
-Known gap:
-- **`getShiftTimeline`'s main minute-grain timeline query returns HTTP 502**
-  from the Databricks execution path via `retool_execute_resource_ts`. Simple and
-  medium Databricks queries, and small scans of the same base tables, succeed;
-  only this heavy multi-catalog query (it builds a per-minute grid with
-  `LATERAL VIEW explode(sequence(...))` across four catalogs) is rejected. The
-  failure is fast (~2s) with an empty `logs` array and a truncated gateway HTML
-  body, so the root cause is not visible client-side — diagnosing it further
-  needs Retool-side execution logs. All other dashboard data loads.
-
-## Probe
-
-`pnpm run probe` connects, lists resource bindings, and runs `SELECT 1` against
-Databricks — a quick check that OAuth and the resource path are healthy.
+- SQL resources with a `.query(sql)` interface are supported.
+- OpenAPI-annotated REST resources are supported through a dynamic method proxy.
+- Other resource types may need a dedicated shim.
+- Very large analytical queries can exceed MCP or upstream gateway limits even
+  when smaller queries against the same resource succeed.
+- OAuth refresh, write gating, and query-history logging are handled by the
+  runner rather than individual apps.
