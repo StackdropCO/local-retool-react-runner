@@ -5,9 +5,10 @@ import { createServer as createViteServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { TOOL_ROOT } from './paths.js'
 import { hooksVirtualPlugin } from './vitePlugin.js'
-import { readResourceRefs, createRunner, walkTs } from './endpointRunner.js'
-import { resolveResources, buildGlobals } from './resourceGlobals.js'
+import { readEndpointResourceRefs, readResourceRefs, createRunner, walkTs } from './endpointRunner.js'
+import { resolveResources, buildGlobals, validateLocalResourceBindings } from './resourceGlobals.js'
 import type { McpClient } from './mcpClient.js'
+import { loadLocalResourceDefinitions } from './localResourceConfig.js'
 
 // The app frontend lives outside the tool root, so Vite can't resolve its bare
 // npm imports (react, radix, lucide, ...) — those packages are installed in the
@@ -41,15 +42,37 @@ const normalize = (raw: unknown) => raw
 
 export async function startServer(opts: { appDir: string; port: number; writes: boolean; mcp: McpClient }) {
   const endpoints = discoverEndpoints(opts.appDir)
+  const refsByEndpoint = readEndpointResourceRefs(opts.appDir)
   const refs = readResourceRefs(opts.appDir)
-  const map = await resolveResources(opts.mcp, refs)
+  const backendFiles = walkTs(join(opts.appDir, 'backend'))
+  const map = await resolveResources(opts.mcp, refs, backendFiles.map((file) => readFileSync(file, 'utf8')))
+  const localResources = loadLocalResourceDefinitions({ appResourceIds: new Set(refs.map((ref) => ref.name)) })
+  validateLocalResourceBindings(map, localResources)
+  for (const definition of Object.values(localResources)) {
+    console.log(
+      `[local-resource] ${definition.binding} (${definition.resourceId}) ` +
+        `${definition.specPath} #${definition.specHash.slice(0, 12)}`,
+    )
+  }
 
   const app = express()
   app.use(express.json({ limit: '10mb' }))
 
   app.post('/rpc/:endpoint', async (req, res) => {
     const endpoint = req.params.endpoint
-    const globals = buildGlobals(opts.mcp, map, { writes: opts.writes, endpoint, normalize })
+    const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
+    const endpointMap = Object.fromEntries(
+      Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
+    )
+    const endpointLocalResources = Object.fromEntries(
+      Object.entries(localResources).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
+    )
+    const globals = buildGlobals(opts.mcp, endpointMap, {
+      writes: opts.writes,
+      endpoint,
+      normalize,
+      localResources: endpointLocalResources,
+    })
     const runner = createRunner({ appDir: opts.appDir, globals })
     try {
       const result = await runner.run(endpoint, req.body?.params ?? {})

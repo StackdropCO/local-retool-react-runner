@@ -31,14 +31,25 @@ own **apps repo directory** (both are saved after first use).
 5. **In the panel:** enter **your** MCP URL (e.g. `https://<your-org>.retool.com/mcp`),
    click **Save URL**, then **Authorize** — a browser tab opens once to
    log in to your Retool org; the token is cached for next time.
-6. **Browse** to your apps repo folder → **Scan** → pick a **branch** in the dropdown
-   next to the app (defaults to the checked-out one) → click **Run**. It opens on its
-   own port. Your MCP URL and repo dir are remembered for next time.
+6. **Browse** to your apps repo folder → **Scan** → pick a registered **worktree**
+   next to the app → click **Run**. The preview opens on its own port and watches the
+   exact files in that worktree. Your MCP URL and repo dir are remembered for next time.
 
-**Branches:** running a branch other than the one currently checked out uses an isolated
-**git worktree** (created under `.worktrees/`, reused after that) — so it reflects that
-branch **without touching your working tree or requiring a `git checkout`**. From the CLI:
-`--branch <name>`.
+### Worktrees and parallel branches
+
+The panel discovers worktrees from `git worktree list`; it does not infer branch state
+from folder names. It never creates a worktree, checks out a branch, resets files, or
+pulls changes. Create/select the task worktree with Git or your agent first, then attach
+the panel to that same tree. This keeps the agent and preview on the same files, so
+frontend changes hot-reload and backend changes restart automatically.
+
+Each worktree gets an independent runner process and port, so multiple branches can run
+in parallel. The panel shows the selected worktree's path, branch, commit, and whether it
+has local modifications. If the path or branch changes after selection, starting the
+preview fails explicitly rather than switching the worktree behind your back.
+
+From the CLI, pass the app path inside the intended worktree. `--branch <name>` is an
+optional validation check for that existing worktree; it does not create or switch one.
 
 Prefer the terminal? Provide both the app and the MCP URL:
 ```
@@ -55,7 +66,8 @@ A React and shadcn/ui control panel for setting the **MCP URL**, authorizing the
 local machine, inspecting queryable **resources**, scanning an apps repository,
 and running or stopping apps. Connection and process state stay visible in the
 header. Write access is disabled by default and requires an explicit warning
-confirmation. Everything is also available from the CLI.
+confirmation. Registered worktrees can be previewed concurrently, with their exact
+path and Git state visible. Everything is also available from the CLI.
 
 ## Run (CLI)
 
@@ -112,12 +124,69 @@ For example, an app might call `sqlWarehouse.query(sql)`,
 names come from the app and MCP resource bindings; the runner does not bake in
 organization-specific resources.
 
+Resources are matched by the UUIDs in `resourceReferencesByFile`, not by display
+name. References stay scoped to the endpoint that declared them. If Retool's
+generated TypeScript definition uses different casing from the checked-in app,
+the runner exposes the app spelling and executes with the spelling present in
+the app source, falling back to the generated spelling only for a precise
+`<binding> is not defined` error. Ambiguous aliases fail at startup.
+
+### Local REST resources
+
+Retool MCP cannot execute a plain `restapi` resource that has only a base URL.
+The runner can execute those resources locally when you provide a private
+OpenAPI definition keyed by the resource UUID. A configured local UUID always
+takes precedence over MCP; resources without a local entry keep their existing
+MCP behavior.
+
+Copy the fake examples and replace every example value locally:
+
+```sh
+cp -R resources.example .local-resources
+```
+
+`.local-resources/` is gitignored. Its filled registry, real OpenAPI documents,
+base URLs, and environment-specific details are not committed to this repo or
+the Retool apps repo. `resources.json` maps each Retool UUID to its app binding,
+spec path, and HTTPS base URL. The base URL must match an OpenAPI `servers`
+origin, and each request must match a documented method and path.
+
+The control panel's **Local API specs** card shows each loaded binding, UUID,
+private spec filename, and short content hash. The MCP resource table labels a
+matching UUID as **local**. Click **Edit** to view or paste YAML/JSON in a
+lightweight text modal. **Validate and save** parses the document and applies
+the same OpenAPI server, method, and path checks used by the runner. A valid
+document atomically replaces that resource's existing private spec; an invalid
+document stays in the editor with an error and leaves the file untouched. The
+panel resolves the file from the configured UUID and never accepts a filesystem
+path from the browser.
+
+The app keeps its Retool-facing interface:
+
+```ts
+await exampleUpload.query({
+  method: 'POST',
+  path: uploadUrl.pathname + uploadUrl.search,
+  body: fileBuffer,
+})
+```
+
+`GET`, `HEAD`, and `OPTIONS` work in read-only previews. `POST`, `PUT`, `PATCH`,
+and `DELETE` require `--writes`. Redirects are not followed, and logs omit
+request bodies, authorization headers, and signed query values.
+
+After saving, the card refreshes the content hash. Restart any running app
+preview to make that preview load the updated policy; startup prints its path
+and content hash. Update a definition in place while the Retool UUID is
+unchanged. Create a new entry only for a new Retool resource UUID or when two
+incompatible API versions must remain available in parallel.
+
 ## Query history
 
 Every MCP `execute_resource_ts` call is appended to
 `logs/queries-YYYY-MM-DD.jsonl` — resource, the exact SQL/code, ok/error, row
-count, duration. Because prepared statements are off (SQL is inlined), this is a
-full, diffable history of what actually ran.
+count, duration. SQL text and any positional parameter array are included in the
+generated resource call, giving a diffable history of what actually ran.
 
 ## Read-only vs writes
 
@@ -127,7 +196,7 @@ shim and blocked **before** it reaches the MCP. Pass `--writes` to allow them
 
 ## Compatibility
 
-- SQL resources with a `.query(sql)` interface are supported.
+- SQL resources with `.query(sql)` and `.query(sql, params)` interfaces are supported.
 - OpenAPI-annotated REST resources are supported through a dynamic method proxy.
 - Other resource types may need a dedicated shim.
 - Very large analytical queries can exceed MCP or upstream gateway limits even

@@ -5,7 +5,7 @@ import { readConfig } from './config.js'
 import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
-import { resolveAppForBranch } from './git.js'
+import { repoRoot, validateWorktreeTarget } from './git.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -19,7 +19,9 @@ async function main() {
   const writes = has('writes')
   const branch = arg('branch', '')!
   if (branch && appDir) {
-    appDir = resolveAppForBranch(appDir, branch) // isolated worktree; leaves main checkout alone
+    const worktreePath = repoRoot(appDir)
+    if (!worktreePath) throw new Error(`app is not inside a Git worktree: ${appDir}`)
+    validateWorktreeTarget(appDir, worktreePath, branch)
     console.log(`[runner] branch=${branch}`)
   }
   if (!appDir || !existsSync(join(appDir, 'frontend', 'App.tsx'))) {

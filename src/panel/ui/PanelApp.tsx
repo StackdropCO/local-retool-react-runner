@@ -6,6 +6,7 @@ import { DiscoveredApps } from './components/discovered-apps'
 import { RepositoryCard } from './components/repository-card'
 import { ResourceCard } from './components/resource-card'
 import { RunningApps } from './components/running-apps'
+import { LocalResourceCard } from './components/local-resource-card'
 import { panelApi, type PanelApi } from './lib/api'
 import type { PanelStatus, RunningApp, RunInput, ScannedApp } from './lib/types'
 
@@ -86,6 +87,7 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4">
             <ConnectionCard status={status} onSave={saveMcpUrl} onAuthorize={authorize} />
+            <LocalResourceCard status={status} api={api} onSaved={refreshStatus} />
             <RepositoryCard api={api} initialRepoDir={status?.repoDir || ''} onScan={scan} />
             <DiscoveredApps apps={apps} onRun={run} />
             <ResourceCard api={api} />

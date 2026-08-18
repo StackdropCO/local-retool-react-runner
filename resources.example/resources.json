@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "resources": {
+    "00000000-0000-0000-0000-000000000000": {
+      "binding": "exampleUpload",
+      "spec": "./generic-upload.openapi.yaml",
+      "baseUrl": "https://uploads.example.invalid"
+    }
+  }
+}

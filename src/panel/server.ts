@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer as createNetServer } from 'node:net'
 import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, dirname, isAbsolute } from 'node:path'
+import { basename, join, dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -12,7 +12,9 @@ import { TOOL_ROOT, MCP_URL } from '../paths.js'
 import { connectMcp, hasCachedAuth, type McpClient } from '../mcpClient.js'
 import { scanApps } from '../scan.js'
 import { readConfig, writeConfig } from '../config.js'
-import { resolveAppForBranch } from '../git.js'
+import { validateWorktreeTarget } from '../git.js'
+import { loadLocalResourceDefinitions, loadLocalResourceEntries } from '../localResourceConfig.js'
+import { readLocalResourceSpec, saveLocalResourceSpec } from '../localResourceSpecStore.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
@@ -30,7 +32,7 @@ const READABLE_TYPES = new Set([
   'restapi', // only if OpenAPI-annotated — flagged as "maybe" below
 ])
 
-type Running = { appPath: string; runDir: string; branch: string; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
+type Running = { appPath: string; worktreePath: string; branch: string; head: string; dirty: boolean; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
 
 export type PanelServer = {
   port: number
@@ -38,16 +40,86 @@ export type PanelServer = {
   close(): Promise<void>
 }
 
-export async function createPanelServer(port: number): Promise<PanelServer> {
+export type PanelServerOptions = {
+  localResourceDirectory?: string
+}
+
+export async function createPanelServer(port: number, options: PanelServerOptions = {}): Promise<PanelServer> {
   let mcpUrl = readConfig().mcpUrl || MCP_URL
   let mcp: McpClient | null = null
   const running = new Map<number, Running>()
 
   const app = express()
-  app.use(express.json())
+  app.use(express.json({ limit: '2mb' }))
+
+  const localResourceStatus = () => {
+    let entries
+    try {
+      entries = loadLocalResourceEntries({ directory: options.localResourceDirectory })
+    } catch (error) {
+      return {
+        definitions: {},
+        localResourceError: String((error as Error)?.message ?? error),
+        localResources: [],
+      }
+    }
+
+    const localResources = Object.values(entries).map((entry) => {
+      const spec = readLocalResourceSpec(entry.resourceId, { directory: options.localResourceDirectory })
+      return {
+        resourceId: entry.resourceId,
+        binding: entry.binding,
+        specFile: spec.specFile,
+        specHash: spec.specHash,
+      }
+    })
+    try {
+      const definitions = loadLocalResourceDefinitions({ directory: options.localResourceDirectory })
+      return { definitions, localResourceError: '', localResources }
+    } catch (error) {
+      return {
+        definitions: {},
+        localResourceError: String((error as Error)?.message ?? error),
+        localResources,
+      }
+    }
+  }
 
   app.get('/api/status', (_req, res) => {
-    res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl), connected: !!mcp, repoDir: readConfig().repoDir || '' })
+    const { localResources, localResourceError } = localResourceStatus()
+    res.json({
+      mcpUrl,
+      cachedAuth: hasCachedAuth(mcpUrl),
+      connected: !!mcp,
+      repoDir: readConfig().repoDir || '',
+      localResources,
+      localResourceError,
+    })
+  })
+
+  const localSpecError = (res: express.Response, error: unknown) => {
+    const message = String((error as Error)?.message ?? error)
+    res.status(/is not configured$/.test(message) ? 404 : 400).json({ error: message })
+  }
+
+  app.get('/api/local-resources/:resourceId/spec', (req, res) => {
+    try {
+      res.json(readLocalResourceSpec(String(req.params.resourceId), {
+        directory: options.localResourceDirectory,
+      }))
+    } catch (error) {
+      localSpecError(res, error)
+    }
+  })
+
+  app.put('/api/local-resources/:resourceId/spec', (req, res) => {
+    try {
+      res.json(saveLocalResourceSpec(String(req.params.resourceId), req.body?.content, {
+        directory: options.localResourceDirectory,
+      }))
+    } catch (error) {
+      localSpecError(res, error)
+    }
   })
 
   // Set the MCP URL (does not connect). Clears any existing connection.
@@ -83,14 +155,22 @@ export async function createPanelServer(port: number): Promise<PanelServer> {
     try {
       if (!mcp) mcp = await connectMcp(mcpUrl)
       const list = await mcp.listResources()
+      const local = localResourceStatus()
+      if (local.localResourceError) throw new Error(local.localResourceError)
       const resources = list
-        .map((r) => ({
-          name: r.name,
-          displayName: r.displayName ?? r.name,
-          type: r.type ?? 'unknown',
-          readable: READABLE_TYPES.has(r.type ?? ''),
-          note: r.type === 'restapi' ? 'only if OpenAPI-annotated' : '',
-        }))
+        .map((r) => {
+          const definition = local.definitions[r.name]
+          return {
+            name: r.name,
+            displayName: r.displayName ?? r.name,
+            type: r.type ?? 'unknown',
+            readable: Boolean(definition) || READABLE_TYPES.has(r.type ?? ''),
+            localConfigured: Boolean(definition),
+            note: definition
+              ? `${basename(definition.specPath)} · #${definition.specHash.slice(0, 12)}`
+              : r.type === 'restapi' ? 'only if OpenAPI-annotated or configured locally' : '',
+          }
+        })
         .sort((a, b) => a.displayName.localeCompare(b.displayName))
       res.json({ resources })
     } catch (e: any) {
@@ -154,26 +234,29 @@ export async function createPanelServer(port: number): Promise<PanelServer> {
 
   app.post('/api/run', async (req, res) => {
     const appPath = String(req.body?.appPath || '').trim()
+    const worktreePath = String(req.body?.worktreePath || '').trim()
     const branch = String(req.body?.branch || '').trim()
     const name = String(req.body?.name || appPath.split('/').pop() || 'app')
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
+    if (!worktreePath) return res.status(400).json({ error: 'worktreePath required' })
     if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first (section 1), then Save URL.' })
-    // Resolve the branch to an isolated worktree (leaves the main checkout untouched).
-    let runDir = appPath
+    // Attach to the exact worktree selected by the user/agent. Never switch or
+    // create branches from the panel: stale selections fail closed.
+    let worktree
     try {
-      runDir = resolveAppForBranch(appPath, branch)
+      worktree = validateWorktreeTarget(appPath, worktreePath, branch)
     } catch (e: any) {
-      return res.status(400).json({ error: `branch "${branch}": ${String(e?.message ?? e)}` })
+      return res.status(400).json({ error: String(e?.message ?? e) })
     }
-    // Already running this app+branch? Reuse it instead of launching a duplicate.
-    const existing = [...running.values()].find((r) => r.appPath === appPath && r.branch === branch)
+    // Already running this exact app directory? Reuse its watcher and port.
+    const existing = [...running.values()].find((r) => r.appPath === appPath)
     if (existing) {
-      return res.json({ port: existing.port, url: existing.url, name: existing.name, branch: existing.branch, writes: existing.writes, alreadyRunning: true })
+      return res.json({ port: existing.port, url: existing.url, name: existing.name, branch: existing.branch, worktreePath: existing.worktreePath, head: existing.head, dirty: existing.dirty, writes: existing.writes, alreadyRunning: true })
     }
     const p = await nextPort()
     // Launch in watch mode (dev.ts) so backend/query edits auto-reload the app.
-    const args = ['src/dev.ts', '--app', runDir, '--port', String(p), '--mcp-url', mcpUrl]
+    const args = ['src/dev.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
     if (writes) args.push('--writes')
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
     const url = `http://localhost:${p}`
@@ -187,8 +270,8 @@ export async function createPanelServer(port: number): Promise<PanelServer> {
       const s = b.toString()
       process.stdout.write(`[app:${p}] ${s}`)
       if (s.includes('serving')) {
-        running.set(p, { appPath, runDir, branch, name, port: p, url, writes, child })
-        done({ port: p, url, name, branch, writes })
+        running.set(p, { appPath, worktreePath, branch, head: worktree.head, dirty: worktree.dirty, name, port: p, url, writes, child })
+        done({ port: p, url, name, branch, worktreePath, head: worktree.head, dirty: worktree.dirty, writes })
       }
     })
     child.stderr.on('data', (b) => process.stderr.write(`[app:${p}] ${b}`))
@@ -196,12 +279,12 @@ export async function createPanelServer(port: number): Promise<PanelServer> {
       running.delete(p)
       done({ error: `runner exited (code ${code}) before serving` }, 400)
     })
-    setTimeout(() => done({ port: p, url, name, branch, writes, warning: 'started; not confirmed serving yet' }), 45000)
+    setTimeout(() => done({ port: p, url, name, branch, worktreePath, writes, warning: 'started; not confirmed serving yet' }), 45000)
   })
 
   app.get('/api/running', (_req, res) => {
     res.json({
-      apps: [...running.values()].map(({ name, appPath, branch, port, url, writes }) => ({ name, appPath, branch, port, url, writes })),
+      apps: [...running.values()].map(({ name, appPath, worktreePath, branch, head, dirty, port, url, writes }) => ({ name, appPath, worktreePath, branch, head, dirty, port, url, writes })),
     })
   })
 
@@ -218,7 +301,10 @@ export async function createPanelServer(port: number): Promise<PanelServer> {
     root: join(HERE, 'ui'),
     appType: 'spa',
     plugins: [react(), tailwindcss()],
-    server: { middlewareMode: true },
+    // Middleware-mode Vite defaults every panel to websocket port 24678.
+    // Give each real panel port its own HMR socket so parallel panels and app
+    // previews cannot prevent main.tsx from mounting.
+    server: { middlewareMode: true, hmr: { port: port > 0 ? port + 20_000 : 24_679 } },
   })
   app.use(vite.middlewares)
 

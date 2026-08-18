@@ -17,6 +17,13 @@ describe('buildSqlSnippet', () => {
     const s = buildSqlSnippet('databricks', "SELECT 'a\nb'")
     expect(s).toBe('return await databricks.query(' + JSON.stringify("SELECT 'a\nb'") + ')')
   })
+
+  it('forwards positional parameters as the second query argument', () => {
+    const s = buildSqlSnippet('databricks', 'SELECT * FROM t WHERE day = ? AND geo = ?', ['2026-08-18', 'lhr'])
+    expect(s).toBe(
+      'return await databricks.query("SELECT * FROM t WHERE day = ? AND geo = ?", ["2026-08-18","lhr"])',
+    )
+  })
 })
 
 describe('buildRestSnippet', () => {

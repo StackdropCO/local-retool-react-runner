@@ -26,6 +26,7 @@ describe('panel API', () => {
 
     await createPanelApi().run({
       appPath: '/repo/apps-v2/Group/App',
+      worktreePath: '/repo',
       name: 'App',
       branch: 'main',
       writes: false,
@@ -36,10 +37,30 @@ describe('panel API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         appPath: '/repo/apps-v2/Group/App',
+        worktreePath: '/repo',
         name: 'App',
         branch: 'main',
         writes: false,
       }),
+    })
+  })
+
+  it('loads and saves local specs through UUID-scoped endpoints', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ resourceId: 'uuid/with spaces', content: 'openapi: 3.0.3' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const api = createPanelApi()
+
+    await api.loadLocalResourceSpec('uuid/with spaces')
+    await api.saveLocalResourceSpec('uuid/with spaces', 'openapi: 3.0.3')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/local-resources/uuid%2Fwith%20spaces/spec', undefined)
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/local-resources/uuid%2Fwith%20spaces/spec', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'openapi: 3.0.3' }),
     })
   })
 })

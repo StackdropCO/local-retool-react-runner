@@ -57,7 +57,9 @@ export function ResourceCard({ api }: { api: PanelApi }) {
                   <TableCell>{resource.displayName}</TableCell>
                   <TableCell className="mono text-xs text-muted-foreground">{resource.type}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {resource.readable ? (resource.note ? `conditional — ${resource.note}` : 'yes') : 'no'}
+                    {resource.localConfigured
+                      ? `local — ${resource.note}`
+                      : resource.readable ? (resource.note ? `conditional — ${resource.note}` : 'yes') : 'no'}
                   </TableCell>
                 </TableRow>
               ))}

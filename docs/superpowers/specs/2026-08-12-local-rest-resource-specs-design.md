@@ -6,8 +6,8 @@ Allow the local runner to execute Retool `restapi` resources that Retool MCP
 cannot execute because they have only a base URL and no MCP-visible OpenAPI
 definition. The Retool apps repository remains unchanged.
 
-The first target is the `slack file upload` resource, whose app-facing binding
-is `slackFileUpload` and whose identity is its Retool resource UUID.
+The first target is a private file-upload resource, whose app-facing binding
+is `privateUpload` and whose identity is its Retool resource UUID.
 
 ## Repository and privacy model
 
@@ -24,7 +24,7 @@ Each developer creates private definitions under:
 ```text
 .local-resources/
   resources.json
-  slack-file-upload.openapi.yaml
+  private-upload.openapi.yaml
 ```
 
 `.local-resources/` is gitignored. The filled resource mapping, real API
@@ -72,8 +72,8 @@ allowed server in the OpenAPI document. Unknown registry fields are rejected so
 configuration mistakes fail visibly.
 
 Credentials are referenced by environment-variable name rather than stored as
-literal values. The Slack external upload URL is pre-signed, so its first local
-definition does not require a Slack token.
+literal values. The initial upload resource uses pre-signed URLs, so its local
+definition does not require an API token.
 
 ## Execution precedence and API compatibility
 
@@ -84,7 +84,7 @@ no local definition retain their current MCP execution path.
 The app continues using its existing interface:
 
 ```ts
-await slackFileUpload.query({
+await privateUpload.query({
   method: "POST",
   path: uploadUrl.pathname + uploadUrl.search,
   body: buffer,
@@ -108,7 +108,7 @@ The existing read-only mode applies to local REST resources:
 - `GET`, `HEAD`, and `OPTIONS` are allowed in read-only mode.
 - `POST`, `PUT`, `PATCH`, and `DELETE` require `--writes`.
 
-This means the Slack file upload cannot occur accidentally in a read-only
+This means a file upload cannot occur accidentally in a read-only
 preview. The adapter logs request metadata and duration but never logs the PDF
 body, authorization headers, or signed query values.
 
@@ -129,18 +129,29 @@ write gating.
 proxy when the endpoint references a UUID present in the local registry.
 
 The CLI and panel show whether local resources were loaded and surface startup
-errors. No resource editor or secret editor is added to the panel in this
-iteration.
+errors. Each configured resource can be opened in a lightweight modal that
+loads its private OpenAPI source and saves edits back to the same configured
+file. The browser sends only the resource UUID and document text; it cannot
+choose a filesystem path. The server validates the complete candidate document
+before replacing the existing file atomically. Invalid documents remain in the
+editor with an error and never change the on-disk spec. Successful saves return
+the new content hash so the panel can refresh its status.
+
+The modal uses the existing dialog components and a plain monospace textarea.
+It does not add a code-editor dependency, edit the resource registry, or expose
+secrets beyond the local browser session.
 
 ## Testing
 
 Unit tests cover registry validation, relative path resolution, UUID and binding
 matching, spec server/path/method enforcement, response normalization, write
-blocking, redirect-origin rejection, redaction, and local-over-MCP precedence.
+blocking, redirect-origin rejection, redaction, local-over-MCP precedence, and
+atomic validation-before-save. Panel tests cover loading, editing, validation
+errors, saving, and refreshing the displayed content hash.
 
 HTTP adapter tests use a temporary local server and fake OpenAPI document. They
-never call Slack or another external service. A manual verification uses the
-private Slack upload definition only after write mode is explicitly enabled;
+never call an external service. A manual verification uses the private upload
+definition only after write mode is explicitly enabled;
 it must not publish a report or upload a file as part of the automated suite.
 
 ## Out of scope
@@ -148,5 +159,5 @@ it must not publish a report or upload a file as part of the automated suite.
 - Uploading private specs to Retool or either GitHub repository.
 - Editing Retool resources.
 - Generating a complete OpenAPI client.
-- A panel-based resource/spec editor.
+- Editing the resource registry or creating resource mappings in the panel.
 - Automatic migration between incompatible resource UUIDs.

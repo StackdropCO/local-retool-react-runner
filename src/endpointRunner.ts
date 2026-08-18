@@ -16,16 +16,34 @@ export function walkTs(dir: string): string[] {
 }
 
 export function readResourceRefs(appDir: string): ResourceRef[] {
-  const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
-  const byFile = pkg?.retool?.app?.resourceReferencesByFile ?? {}
+  const byEndpoint = readEndpointResourceRefs(appDir)
   const seen = new Set<string>()
   const out: ResourceRef[] = []
-  for (const arr of Object.values<any>(byFile)) {
-    for (const r of arr ?? []) {
-      if (seen.has(r.displayName)) continue
-      seen.add(r.displayName)
-      out.push({ name: r.name, displayName: r.displayName, type: r.type })
+  for (const refs of Object.values(byEndpoint)) {
+    for (const ref of refs) {
+      if (seen.has(ref.name)) continue
+      seen.add(ref.name)
+      out.push(ref)
     }
+  }
+  return out
+}
+
+export function readEndpointResourceRefs(appDir: string): Record<string, ResourceRef[]> {
+  const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
+  const byFile = pkg?.retool?.app?.resourceReferencesByFile ?? {}
+  const out: Record<string, ResourceRef[]> = {}
+  for (const [file, arr] of Object.entries<any>(byFile)) {
+    const endpoint = file.split('/').pop()?.replace(/\.ts$/, '')
+    if (!endpoint) continue
+    const seen = new Set<string>()
+    const refs: ResourceRef[] = []
+    for (const r of arr ?? []) {
+      if (seen.has(r.name)) continue
+      seen.add(r.name)
+      refs.push({ name: r.name, displayName: r.displayName, type: r.type })
+    }
+    out[endpoint] = refs
   }
   return out
 }

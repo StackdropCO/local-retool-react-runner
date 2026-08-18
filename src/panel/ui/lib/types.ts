@@ -3,6 +3,19 @@ export interface PanelStatus {
   cachedAuth: boolean
   connected: boolean
   repoDir: string
+  localResources?: LocalResourceSummary[]
+  localResourceError?: string
+}
+
+export interface LocalResourceSummary {
+  resourceId: string
+  binding: string
+  specFile: string
+  specHash: string
+}
+
+export interface LocalResourceSpec extends LocalResourceSummary {
+  content: string
 }
 
 export interface Resource {
@@ -10,6 +23,7 @@ export interface Resource {
   displayName: string
   type: string
   readable: boolean
+  localConfigured?: boolean
   note: string
 }
 
@@ -19,14 +33,26 @@ export interface ScannedApp {
   path: string
   branch: string | null
   branches: string[]
+  worktrees: AppWorktree[]
   endpoints: string[]
   resources: Array<{ displayName: string; type: string }>
+}
+
+export interface AppWorktree {
+  worktreePath: string
+  appPath: string
+  branch: string | null
+  head: string
+  dirty: boolean
 }
 
 export interface RunningApp {
   name: string
   appPath: string
+  worktreePath: string
   branch: string
+  head: string
+  dirty: boolean
   port: number
   url: string
   writes: boolean
@@ -41,6 +67,7 @@ export interface BrowseResult {
 
 export interface RunInput {
   appPath: string
+  worktreePath: string
   name: string
   branch: string
   writes: boolean
@@ -51,6 +78,9 @@ export interface RunResult {
   url: string
   name?: string
   branch?: string
+  worktreePath?: string
+  head?: string
+  dirty?: boolean
   writes?: boolean
   alreadyRunning?: boolean
   warning?: string

@@ -15,8 +15,9 @@ export function isWrite(sql: string): boolean {
   return WRITE_RE.test(stripLeading(sql))
 }
 
-export function buildSqlSnippet(binding: string, sql: string): string {
-  return `return await ${binding}.query(${JSON.stringify(sql)})`
+export function buildSqlSnippet(binding: string, sql: string, params?: unknown[]): string {
+  const args = params === undefined ? [sql] : [sql, params]
+  return `return await ${binding}.query(${args.map((value) => JSON.stringify(value)).join(', ')})`
 }
 
 export function buildRestSnippet(binding: string, path: string[], args: unknown[]): string {

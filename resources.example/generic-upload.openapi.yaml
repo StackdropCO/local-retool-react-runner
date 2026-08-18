@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Example private upload
+  version: 1.0.0
+  description: Non-functional example for configuring a local REST resource.
+servers:
+  - url: https://uploads.example.invalid
+paths:
+  /upload/v1/{token}:
+    post:
+      operationId: uploadFile
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Example success response
+          content:
+            text/plain:
+              schema:
+                type: string

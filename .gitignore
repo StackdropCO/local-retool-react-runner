@@ -2,5 +2,6 @@ node_modules/
 .mcp-auth/
 logs/
 config.json
+.local-resources/
 .DS_Store
 .worktrees/

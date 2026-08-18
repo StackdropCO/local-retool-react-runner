@@ -50,9 +50,12 @@ export function RunningApps({ apps, loading, error, onStop }: RunningAppsProps) 
             {/* Branch on its own line, wrapping — these names are long. */}
             {app.branch && (
               <p className="mono mt-0.5 break-all text-xs text-muted-foreground/80" title={app.branch}>
-                {app.branch}
+                {app.branch} · {app.head.slice(0, 7)} · {app.dirty ? 'modified' : 'clean'}
               </p>
             )}
+            <p className="mono mt-0.5 break-all text-xs text-muted-foreground/80" title={app.worktreePath}>
+              {app.worktreePath}
+            </p>
             <div className="mt-2 flex gap-2">
               <Button asChild size="sm" variant="outline">
                 <a href={app.url} target="_blank" rel="noreferrer">

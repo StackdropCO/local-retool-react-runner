@@ -1,6 +1,14 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { currentBranch, listBranches } from './git.js'
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { currentBranch, listBranches, listWorktrees, repoRoot } from './git.js'
+
+export type AppWorktree = {
+  worktreePath: string
+  appPath: string
+  branch: string | null
+  head: string
+  dirty: boolean
+}
 
 export type ScannedApp = {
   name: string
@@ -10,6 +18,7 @@ export type ScannedApp = {
   resources: Array<{ displayName: string; type: string }>
   branch: string | null
   branches: string[]
+  worktrees: AppWorktree[]
 }
 
 // Walk up to `depth` levels under root, returning dirs that look like a Retool
@@ -75,6 +84,19 @@ export function scanApps(repoDir: string): ScannedApp[] {
       }
       // group = the parent dir name (e.g. "Stackdrop-Hangar")
       const parts = path.split('/')
+      const root = repoRoot(path)
+      const relativeAppPath = root ? relative(root, realpathSync(path)) : ''
+      const worktrees = root
+        ? listWorktrees(root)
+            .map((worktree) => ({
+              worktreePath: worktree.path,
+              appPath: join(worktree.path, relativeAppPath),
+              branch: worktree.branch,
+              head: worktree.head,
+              dirty: worktree.dirty,
+            }))
+            .filter((worktree) => existsSync(join(worktree.appPath, 'package.json')) && existsSync(join(worktree.appPath, 'frontend', 'App.tsx')))
+        : []
       return {
         name: app.name ?? parts[parts.length - 1],
         path,
@@ -83,6 +105,7 @@ export function scanApps(repoDir: string): ScannedApp[] {
         resources: Object.values(refs),
         branch: currentBranch(path),
         branches: listBranches(path),
+        worktrees,
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name))

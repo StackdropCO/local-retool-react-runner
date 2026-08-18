@@ -19,9 +19,11 @@ type AppCardProps = {
   onRun(input: RunInput): Promise<void>
 }
 
+const NO_WORKTREES: ScannedApp['worktrees'] = []
+
 /**
- * Branch names here nearly all share an owner prefix ("arsanymiladext/…"), so
- * showing it wastes the width that the distinguishing part needs. Drop the
+ * Branch names here often share an owner prefix, so showing it wastes the
+ * width that the distinguishing part needs. Drop the
  * prefix for display; the full name stays as the option's value and title.
  */
 function branchLabel(name: string, current?: string | null) {
@@ -30,20 +32,37 @@ function branchLabel(name: string, current?: string | null) {
 }
 
 export function AppCard({ app, onRun }: AppCardProps) {
-  const branches = app.branches.length ? app.branches : app.branch ? [app.branch] : []
-  const [branch, setBranch] = useState(app.branch || branches[0] || '')
+  const worktrees = app.worktrees ?? NO_WORKTREES
+  const initialWorktree = worktrees.find((worktree) => worktree.appPath === app.path)
+    ?? worktrees.find((worktree) => worktree.branch === app.branch)
+    ?? worktrees[0]
+  const [worktreePath, setWorktreePath] = useState(initialWorktree?.worktreePath || '')
   const [writes, setWrites] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => setBranch(app.branch || branches[0] || ''), [app.path, app.branch])
+  useEffect(() => {
+    const next = worktrees.find((worktree) => worktree.appPath === app.path)
+      ?? worktrees.find((worktree) => worktree.branch === app.branch)
+      ?? worktrees[0]
+    setWorktreePath(next?.worktreePath || '')
+  }, [app.path, app.branch, worktrees])
+
+  const selectedWorktree = worktrees.find((worktree) => worktree.worktreePath === worktreePath)
 
   const run = async () => {
     setRunning(true)
     setError('')
     try {
-      await onRun({ appPath: app.path, name: app.name, branch, writes })
+      if (!selectedWorktree) throw new Error('Select a registered worktree before running this app.')
+      await onRun({
+        appPath: selectedWorktree.appPath,
+        worktreePath: selectedWorktree.worktreePath,
+        name: app.name,
+        branch: selectedWorktree.branch || '',
+        writes,
+      })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -70,20 +89,20 @@ export function AppCard({ app, onRun }: AppCardProps) {
 
         <div className="flex shrink-0 items-center gap-3">
           <select
-            aria-label={`Branch for ${app.name}`}
-            title={branch || undefined}
-            value={branch}
-            onChange={(event) => setBranch(event.target.value)}
+            aria-label={`Worktree for ${app.name}`}
+            title={selectedWorktree?.worktreePath}
+            value={worktreePath}
+            onChange={(event) => setWorktreePath(event.target.value)}
             className="mono h-8 w-72 rounded-[4px] border border-input bg-card px-2 text-xs outline-none focus:border-ring"
           >
-            {branches.length ? (
-              branches.map((item) => (
-                <option key={item} value={item} title={item}>
-                  {branchLabel(item, app.branch)}
+            {worktrees.length ? (
+              worktrees.map((item) => (
+                <option key={item.worktreePath} value={item.worktreePath} title={item.worktreePath}>
+                  {branchLabel(item.branch || 'detached', app.branch)} · {item.head.slice(0, 7)} · {item.dirty ? 'modified' : 'clean'}
                 </option>
               ))
             ) : (
-              <option value="">current files</option>
+              <option value="">no registered worktree</option>
             )}
           </select>
 
@@ -97,7 +116,7 @@ export function AppCard({ app, onRun }: AppCardProps) {
             writes
           </label>
 
-          <Button size="sm" onClick={run} disabled={running} aria-label={`Run ${app.name}`}>
+          <Button size="sm" onClick={run} disabled={running || !selectedWorktree} aria-label={`Run ${app.name}`}>
             {running ? 'Starting…' : 'Run'}
           </Button>
         </div>

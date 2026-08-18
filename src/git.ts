@@ -1,11 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join, relative, basename, dirname } from 'node:path'
-import { TOOL_ROOT } from './paths.js'
-
-// Worktrees live OUTSIDE the tool dir (Vite's root) so a running app's Vite
-// never crawls/reloads them. A hidden sibling folder keeps them off the repo too.
-const WORKTREE_BASE = join(dirname(TOOL_ROOT), '.local-mcp-runner-worktrees')
+import { existsSync, realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const git = (cwd: string, args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -53,14 +48,25 @@ export function listBranches(dir: string): string[] {
   }
 }
 
-// Parse `git worktree list --porcelain` → [{ path, branch }].
-export function parseWorktreeList(porcelain: string): Array<{ path: string; branch: string | null }> {
-  const out: Array<{ path: string; branch: string | null }> = []
-  let cur: { path: string; branch: string | null } | null = null
+export type WorktreeInfo = {
+  path: string
+  branch: string | null
+  head: string
+  dirty: boolean
+}
+
+export type ParsedWorktree = Omit<WorktreeInfo, 'dirty'>
+
+// Parse `git worktree list --porcelain` without inferring state from folder names.
+export function parseWorktreeList(porcelain: string): ParsedWorktree[] {
+  const out: ParsedWorktree[] = []
+  let cur: ParsedWorktree | null = null
   for (const line of porcelain.split('\n')) {
     if (line.startsWith('worktree ')) {
       if (cur) out.push(cur)
-      cur = { path: line.slice('worktree '.length), branch: null }
+      cur = { path: line.slice('worktree '.length), branch: null, head: '' }
+    } else if (line.startsWith('HEAD ') && cur) {
+      cur.head = line.slice('HEAD '.length)
     } else if (line.startsWith('branch ') && cur) {
       cur.branch = line.slice('branch '.length).replace('refs/heads/', '')
     }
@@ -69,45 +75,36 @@ export function parseWorktreeList(porcelain: string): Array<{ path: string; bran
   return out
 }
 
-function existingWorktree(root: string, branch: string): string | null {
+export function listWorktrees(dir: string): WorktreeInfo[] {
   try {
-    const list = parseWorktreeList(git(root, ['worktree', 'list', '--porcelain']))
-    return list.find((w) => w.branch === branch)?.path ?? null
+    const root = repoRoot(dir)
+    if (!root) return []
+    return parseWorktreeList(git(root, ['worktree', 'list', '--porcelain'])).map((worktree) => ({
+      ...worktree,
+      dirty: git(worktree.path, ['status', '--porcelain']).length > 0,
+    }))
   } catch {
-    return null
+    return []
   }
 }
 
-const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, '-')
-
 /**
- * Return an absolute app dir that reflects `branch`, without touching the repo's
- * main working tree:
- *  - branch is the current branch (or empty)      → the app dir as-is
- *  - branch is already checked out in a worktree   → that worktree's app dir
- *  - otherwise                                     → create a worktree under
- *    TOOL_ROOT/.worktrees and return its app dir
+ * Verify that a run target belongs to the exact registered worktree selected
+ * by the panel. This function is deliberately read-only: mismatches fail
+ * instead of checking out a branch or creating/repairing a worktree.
  */
-export function resolveAppForBranch(appDir: string, branch?: string): string {
-  const root = repoRoot(appDir)
-  if (!root || !branch || branch === currentBranch(root)) return appDir
-
-  const rel = relative(root, appDir)
-  let wt = existingWorktree(root, branch)
-  if (!wt) {
-    wt = join(WORKTREE_BASE, `${sanitize(basename(root))}__${sanitize(branch)}`)
-    const hasLocal = git(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
-      .split('\n')
-      .includes(branch)
-    if (existsSync(wt)) {
-      // reuse dir but make sure it's on the right branch
-      git(wt, ['checkout', branch])
-    } else if (hasLocal) {
-      git(root, ['worktree', 'add', wt, branch])
-    } else {
-      // remote-only branch: create a local tracking branch in the worktree
-      git(root, ['worktree', 'add', '--track', '-b', branch, wt, `origin/${branch}`])
-    }
+export function validateWorktreeTarget(appPath: string, expectedWorktreePath: string, expectedBranch: string): WorktreeInfo {
+  if (!existsSync(appPath)) throw new Error(`app path not found: ${appPath}`)
+  const actualRoot = repoRoot(appPath)
+  if (!actualRoot) throw new Error(`app path is not inside a Git worktree: ${appPath}`)
+  const canonical = (path: string) => realpathSync.native(resolve(path))
+  if (canonical(actualRoot) !== canonical(expectedWorktreePath)) {
+    throw new Error(`worktree path mismatch: expected ${expectedWorktreePath}, got ${actualRoot}`)
   }
-  return join(wt, rel)
+  const worktree = listWorktrees(actualRoot).find((item) => canonical(item.path) === canonical(actualRoot))
+  if (!worktree) throw new Error(`unregistered Git worktree: ${actualRoot}`)
+  if ((worktree.branch ?? '') !== expectedBranch) {
+    throw new Error(`branch mismatch: expected ${expectedBranch || '(detached)'}, got ${worktree.branch || '(detached)'}`)
+  }
+  return worktree
 }
