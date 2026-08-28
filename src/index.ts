@@ -18,6 +18,9 @@ async function main() {
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
   const branch = arg('branch', '')!
+  // Which Retool environment resource calls execute against. Without it every call
+  // lands on the MCP's default environment, which is production on most orgs.
+  const environmentName = arg('environment', '')!
   if (branch && appDir) {
     appDir = resolveAppForBranch(appDir, branch) // isolated worktree; leaves main checkout alone
     console.log(`[runner] branch=${branch}`)
@@ -38,9 +41,16 @@ async function main() {
   console.log(`[runner] app=${appDir}`)
   console.log(`[runner] mcp=${mcpUrl}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
+  console.log(`[runner] environment=${environmentName || 'MCP default'}`)
   ensureFrontendDeps(appDir)
   const mcp = await connectMcp(mcpUrl)
-  const { url } = await startServer({ appDir, port, writes, mcp })
+  const { url } = await startServer({
+    appDir,
+    port,
+    writes,
+    mcp,
+    ...(environmentName ? { environmentName } : {}),
+  })
   console.log(`[runner] serving ${url}`)
 }
 main().catch((e) => {
