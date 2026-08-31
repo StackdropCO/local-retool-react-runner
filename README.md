@@ -12,15 +12,77 @@ files in, check out, reset, or otherwise modify your apps repository.
 > Code. It is not an official Retool product. The package and CLI are currently
 > named `local-mcp-runner`.
 
-## What it gives you
+## What's new in this release
 
-- A local control panel for finding and running Apps as Code projects.
-- Live frontend updates and automatic backend restarts during development.
-- Authenticated access to the Retool resources declared by each app.
-- Explicit staging or production selection, with read-only mode by default.
-- Independent previews for multiple Git worktrees and branches.
-- App-level TypeScript checking without generating files in the apps repo.
-- Optional local execution for private OpenAPI-backed REST resources.
+- **Environment-aware previews:** choose staging or production in the panel or
+  CLI. Staging is the default, and the environment is forwarded to every Retool
+  resource call.
+- **Safer production controls:** the panel confirms production previews, write
+  mode remains explicit, and a running app cannot silently change environment
+  or write mode.
+- **Resource preflight checks:** the runner validates required resources in the
+  selected environment before serving the app. The panel links missing resources
+  directly to their Retool configuration pages.
+- **Agent-ready typechecking:** coding agents and LLMs can typecheck one app in
+  one exact branch worktree and consume stable JSON diagnostics without starting
+  a preview or generating files in the apps repo.
+- **More reliable parallel development:** each worktree preview has its own
+  process, port, and Vite cache. The panel displays its branch, commit, dirty
+  state, environment, and write mode.
+- **Improved local REST support:** private OpenAPI resources remain outside the
+  apps repo, are filtered to the selected app, and can be inspected, validated,
+  and updated through the panel.
+- **Public project foundation:** new public-facing documentation, safer local
+  data guidance, Apache-2.0 licensing, and Stackdrop attribution.
+
+## Feature overview
+
+### Local React runtime
+
+- Runs the checked-in `frontend/App.tsx` with Vite—no generated app copy.
+- Hot-reloads frontend components, libraries, and CSS.
+- Executes the app's checked-in TypeScript backend endpoints locally.
+- Restarts backend and runner code automatically under `pnpm dev`.
+- Installs missing frontend packages into the runner, never the apps repo.
+- Supports several simultaneous app and worktree previews on isolated ports and
+  Vite caches.
+
+### Control panel
+
+- Saves and authorizes a per-user Retool MCP URL.
+- Shows MCP connection state and queryable Retool resources.
+- Scans an Apps as Code repository and discovers registered Git worktrees.
+- Displays exact worktree path, branch, commit, and modification state.
+- Selects staging or production and read-only or write-enabled execution per app.
+- Confirms production launches and write access explicitly.
+- Starts, opens, monitors, and stops independent app previews.
+- Shows the active environment and write mode for every running app.
+- Reports environment-specific missing resources with direct Retool links.
+- Lists, opens, validates, and atomically saves private local OpenAPI documents.
+
+### Retool resources and safety
+
+- Authenticates to Retool through standalone OAuth and refreshes cached tokens.
+- Resolves resources by UUID from the app manifest and keeps them scoped to the
+  backend endpoint that declared them.
+- Supports SQL `.query(sql)` and `.query(sql, params)` interfaces.
+- Supports OpenAPI-annotated REST resources through dynamic method proxies.
+- Can execute configured private REST resources locally from an OpenAPI policy.
+- Defaults to staging and read-only execution; write mode is opt-in.
+- Records resource calls, outcomes, failures, row counts, and duration in local
+  JSON Lines query history.
+
+### Git and automation
+
+- Uses existing Git worktrees without creating, switching, pulling, or resetting
+  branches.
+- Validates that previews remain attached to the selected worktree.
+- Typechecks an app's frontend and backend against virtual Retool hooks and
+  manifest-backed resource globals.
+- Produces human-readable diagnostics or stable JSON for scripts, coding agents,
+  and LLM repair loops.
+- Leaves generated hooks, declarations, configuration, and dependencies out of
+  the apps repository.
 
 ## Requirements
 
@@ -85,9 +147,46 @@ including for read-only previews.
 pnpm panel # http://localhost:5170
 ```
 
-## CLI
+## CLI reference
 
-Run an app directly from a terminal:
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm panel` | Open the control panel. |
+| `pnpm start -- --app <path>` | Run one app until the process is stopped. |
+| `pnpm dev -- --app <path>` | Run one app and restart its backend when source files change. |
+| `pnpm typecheck -- --branch <name> --app <app>` | Typecheck one app in one registered branch worktree. |
+| `pnpm test` | Run the runner's Vitest suite. |
+
+`pnpm probe` is an internal maintainer diagnostic tied to repository-specific
+test resource UUIDs. It is not a portable connectivity check or part of the
+supported public CLI.
+
+### Panel options
+
+```sh
+pnpm panel -- --port 5170
+```
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--port <number>` | No | `5170` | Port for the local control panel. |
+
+### Preview options
+
+`pnpm start` and `pnpm dev` accept the same options:
+
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--app <path>` | Yes | — | Path to a Retool app containing `frontend/App.tsx`; an absolute path is recommended. |
+| `--mcp-url <url>` | No | Saved URL, then `RETOOL_MCP_URL` | Retool MCP endpoint. |
+| `--port <number>` | No | `5174` | Port for the app preview. |
+| `--environment <name>` | No | `staging` | Retool environment: `staging` or `production`. |
+| `--writes` | No | Off | Permit mutating resource calls. |
+| `--branch <name>` | No | — | Validate that `--app` belongs to this existing worktree branch. |
+
+Examples:
 
 ```sh
 # Staging and read-only are the defaults.
@@ -97,23 +196,26 @@ pnpm start -- --app "/absolute/path/to/apps-v2/Group/App"
 pnpm dev -- --app "/absolute/path/to/apps-v2/Group/App"
 
 # Use production resources in read-only mode.
-pnpm start -- --app "/absolute/path/to/apps-v2/Group/App" --environment production
+pnpm start -- \
+  --app "/absolute/path/to/apps-v2/Group/App" \
+  --environment production
 
-# Explicitly allow writes against staging.
-pnpm start -- --app "/absolute/path/to/apps-v2/Group/App" --environment staging --writes
-```
+# Explicitly allow writes against staging and validate the branch.
+pnpm start -- \
+  --app "/absolute/path/to/apps-v2/Group/App" \
+  --branch "feature/report" \
+  --environment staging \
+  --writes
 
-`--app` is required. The MCP URL is read, in order, from `--mcp-url`, the value
-saved through the panel, or the `RETOOL_MCP_URL` environment variable. Use
-`--port` to change the preview port from its default of `5174`.
-
-To supply the URL explicitly:
-
-```sh
+# Supply the MCP URL instead of using saved configuration.
 pnpm start -- \
   --app "/absolute/path/to/apps-v2/Group/App" \
   --mcp-url "https://<your-org>.retool.com/mcp"
 ```
+
+The MCP URL is resolved in this order: `--mcp-url`, the value saved through the
+panel, then `RETOOL_MCP_URL`. Preview startup exits with status `1` for invalid
+configuration, a missing app, authorization failures, or unavailable resources.
 
 ## Worktrees and parallel branches
 
@@ -157,6 +259,14 @@ pnpm typecheck -- \
   --app "Operations/Report App"
 ```
 
+| Option | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--branch <name>` | Yes | — | Branch with exactly one registered Git worktree. |
+| `--app <app>` | Yes | — | App name below `apps-v2/`, an `apps-v2/...` path, or an absolute path. |
+| `--repo <path>` | No | Path saved by the panel | Apps as Code repository used to find worktrees. |
+| `--json` | No | Off | Emit one structured JSON result instead of text diagnostics. |
+| `--help`, `-h` | No | — | Print usage and exit successfully. |
+
 `--app` may be relative to `apps-v2/`, start with `apps-v2/`, or be an absolute
 app path. The apps repo defaults to the path saved in the panel. Override it
 with `--repo "/path/to/apps-repo"`.
@@ -175,6 +285,30 @@ pnpm typecheck -- \
   --app "Operations/Report App" \
   --json
 ```
+
+The JSON result contains `ok`, `appDir`, `branch`, `worktreePath`, error and
+warning counts, and diagnostics with file, line, column, TypeScript code,
+category, and message. Configuration failures return `{ "ok": false, "error":
+"..." }`. Exit status is `0` when the app is clean and `1` for type errors,
+invalid arguments, or target-resolution failures.
+
+### Coding agents and LLMs
+
+The typecheck command is designed for automated edit-check loops. A coding
+agent or LLM can edit the selected worktree, run:
+
+```sh
+pnpm typecheck -- \
+  --repo "/path/to/apps-repo" \
+  --branch "feature/report" \
+  --app "Operations/Report App" \
+  --json
+```
+
+and use the structured diagnostics to locate and repair errors before running
+the app. Repeating the command is deterministic for the same worktree state.
+It does not switch branches, start a preview, call application resources, or
+write generated files into the app repository.
 
 ## Reloading behavior
 
@@ -272,6 +406,30 @@ entry point is `frontend/App.tsx`, and `orgTheme.css` is optional.
   when smaller calls to the same resource succeed.
 - OAuth refresh, write gating, and query-history logging are handled by the
   runner rather than by individual apps.
+
+## Known limitations and issues
+
+- The runner expects an Apps as Code layout with `frontend/App.tsx`, optional
+  frontend dependencies, TypeScript files under `backend/**`, and Retool
+  resource references in the app manifest.
+- SQL resources and OpenAPI-style REST resources are the supported resource
+  families. Other Retool resource types may require a dedicated runtime shim.
+- A plain Retool `restapi` resource with only a base URL cannot run through MCP;
+  configure it as a private local OpenAPI resource instead.
+- Read-only mode detects common SQL mutation statements and blocks non-read
+  methods for local REST resources. It is a safety layer, not a database or
+  network sandbox.
+- Typechecking models generated Retool hooks and resource globals virtually. It
+  catches TypeScript and integration-shape errors but does not execute queries
+  or prove that remote data and permissions are valid.
+- Branch-based typechecking requires exactly one registered worktree for the
+  requested branch.
+- A running preview must be restarted after its private OpenAPI document is
+  updated.
+- Large analytical calls remain subject to Retool MCP and upstream gateway
+  request, response, and timeout limits.
+- The runner deliberately does not create worktrees, switch branches, pull,
+  reset, commit, or otherwise manage the apps repository.
 
 ## Project status
 
