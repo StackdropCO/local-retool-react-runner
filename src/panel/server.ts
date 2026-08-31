@@ -15,9 +15,18 @@ import { readConfig, writeConfig } from '../config.js'
 import { validateWorktreeTarget } from '../git.js'
 import { loadLocalResourceDefinitions, loadLocalResourceEntries } from '../localResourceConfig.js'
 import { readLocalResourceSpec, saveLocalResourceSpec } from '../localResourceSpecStore.js'
+import { parseRetoolEnvironment, type RetoolEnvironment } from '../environment.js'
+import { readResourceRefs } from '../endpointRunner.js'
+import type { ResourceRef } from '../resourceGlobals.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
+let panelInstanceId = 0
+
+export function panelViteCacheDir(port: number, instanceId: number): string {
+  const name = port > 0 ? `panel-${port}` : `panel-test-${process.pid}-${instanceId}`
+  return join(TOOL_ROOT, 'node_modules', '.vite', name)
+}
 
 // Retool resource types the connector can query through execute_resource_ts.
 const READABLE_TYPES = new Set([
@@ -32,7 +41,76 @@ const READABLE_TYPES = new Set([
   'restapi', // only if OpenAPI-annotated — flagged as "maybe" below
 ])
 
-type Running = { appPath: string; worktreePath: string; branch: string; head: string; dirty: boolean; name: string; port: number; url: string; writes: boolean; child: ChildProcess }
+type Running = {
+  appPath: string
+  worktreePath: string
+  branch: string
+  head: string
+  dirty: boolean
+  name: string
+  port: number
+  url: string
+  environment: RetoolEnvironment
+  writes: boolean
+  child: ChildProcess
+}
+
+export function buildRunnerArgs(input: {
+  appPath: string
+  port: number
+  mcpUrl: string
+  environment: RetoolEnvironment
+  writes: boolean
+}): string[] {
+  const args = [
+    'src/dev.ts',
+    '--app', input.appPath,
+    '--port', String(input.port),
+    '--mcp-url', input.mcpUrl,
+    '--environment', input.environment,
+  ]
+  if (input.writes) args.push('--writes')
+  return args
+}
+
+export function runnerExitResponse(
+  name: string,
+  environment: RetoolEnvironment,
+  code: number | null,
+  stderr: string,
+  resources: ResourceRef[],
+  mcpUrl: string,
+): { error: string; missingResources?: Array<{ name: string; resourceId: string; url: string }> } {
+  const stderrLines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+  const errorLine = stderrLines
+    .find((line) => line.startsWith('Error:') && line.includes(`${environment} environment`))
+  if (!errorLine) {
+    const unexpectedError = stderrLines.find((line) => line.startsWith('Error:'))
+    return {
+      error: unexpectedError
+        ? `${name} did not start in ${environment}: ${unexpectedError.replace(/^Error:\s*/, '')}`
+        : `${name} did not start in ${environment}: runner exited (code ${code}) before serving`,
+    }
+  }
+
+  const origin = new URL(mcpUrl).origin
+  const missingResources = resources
+    .filter((resource) => errorLine.includes(resource.name))
+    .map((resource) => ({
+      name: resource.displayName,
+      resourceId: resource.name,
+      url: `${origin}/resources/${encodeURIComponent(resource.name)}`,
+    }))
+  if (!missingResources.length) {
+    return { error: `${name} did not start in ${environment}: ${errorLine.replace(/^Error:\s*/, '')}` }
+  }
+  return {
+    error: `${name} can't run in ${environment}.`,
+    missingResources,
+  }
+}
 
 export type PanelServer = {
   port: number
@@ -45,6 +123,7 @@ export type PanelServerOptions = {
 }
 
 export async function createPanelServer(port: number, options: PanelServerOptions = {}): Promise<PanelServer> {
+  const instanceId = ++panelInstanceId
   let mcpUrl = readConfig().mcpUrl || MCP_URL
   let mcp: McpClient | null = null
   const running = new Map<number, Running>()
@@ -233,6 +312,12 @@ export async function createPanelServer(port: number, options: PanelServerOption
   }
 
   app.post('/api/run', async (req, res) => {
+    let environment: RetoolEnvironment
+    try {
+      environment = parseRetoolEnvironment(req.body?.environment)
+    } catch (error) {
+      return res.status(400).json({ error: String((error as Error).message ?? error) })
+    }
     const appPath = String(req.body?.appPath || '').trim()
     const worktreePath = String(req.body?.worktreePath || '').trim()
     const branch = String(req.body?.branch || '').trim()
@@ -252,15 +337,21 @@ export async function createPanelServer(port: number, options: PanelServerOption
     // Already running this exact app directory? Reuse its watcher and port.
     const existing = [...running.values()].find((r) => r.appPath === appPath)
     if (existing) {
-      return res.json({ port: existing.port, url: existing.url, name: existing.name, branch: existing.branch, worktreePath: existing.worktreePath, head: existing.head, dirty: existing.dirty, writes: existing.writes, alreadyRunning: true })
+      if (existing.environment !== environment || existing.writes !== writes) {
+        return res.status(409).json({
+          error: `${name} is already running in ${existing.environment} ` +
+            `(${existing.writes ? 'writes enabled' : 'read-only'}). Stop it before changing environment or write mode.`,
+        })
+      }
+      return res.json({ port: existing.port, url: existing.url, name: existing.name, branch: existing.branch, worktreePath: existing.worktreePath, head: existing.head, dirty: existing.dirty, environment: existing.environment, writes: existing.writes, alreadyRunning: true })
     }
     const p = await nextPort()
     // Launch in watch mode (dev.ts) so backend/query edits auto-reload the app.
-    const args = ['src/dev.ts', '--app', appPath, '--port', String(p), '--mcp-url', mcpUrl]
-    if (writes) args.push('--writes')
+    const args = buildRunnerArgs({ appPath, port: p, mcpUrl, environment, writes })
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
     const url = `http://localhost:${p}`
     let settled = false
+    let stderr = ''
     const done = (body: any, code = 200) => {
       if (settled) return
       settled = true
@@ -270,21 +361,25 @@ export async function createPanelServer(port: number, options: PanelServerOption
       const s = b.toString()
       process.stdout.write(`[app:${p}] ${s}`)
       if (s.includes('serving')) {
-        running.set(p, { appPath, worktreePath, branch, head: worktree.head, dirty: worktree.dirty, name, port: p, url, writes, child })
-        done({ port: p, url, name, branch, worktreePath, head: worktree.head, dirty: worktree.dirty, writes })
+        running.set(p, { appPath, worktreePath, branch, head: worktree.head, dirty: worktree.dirty, name, port: p, url, environment, writes, child })
+        done({ port: p, url, name, branch, worktreePath, head: worktree.head, dirty: worktree.dirty, environment, writes })
       }
     })
-    child.stderr.on('data', (b) => process.stderr.write(`[app:${p}] ${b}`))
+    child.stderr.on('data', (b) => {
+      const text = b.toString()
+      stderr = (stderr + text).slice(-8000)
+      process.stderr.write(`[app:${p}] ${text}`)
+    })
     child.on('exit', (code) => {
       running.delete(p)
-      done({ error: `runner exited (code ${code}) before serving` }, 400)
+      done(runnerExitResponse(name, environment, code, stderr, readResourceRefs(appPath), mcpUrl), 400)
     })
-    setTimeout(() => done({ port: p, url, name, branch, worktreePath, writes, warning: 'started; not confirmed serving yet' }), 45000)
+    setTimeout(() => done({ port: p, url, name, branch, worktreePath, environment, writes, warning: 'started; not confirmed serving yet' }), 45000)
   })
 
   app.get('/api/running', (_req, res) => {
     res.json({
-      apps: [...running.values()].map(({ name, appPath, worktreePath, branch, head, dirty, port, url, writes }) => ({ name, appPath, worktreePath, branch, head, dirty, port, url, writes })),
+      apps: [...running.values()].map(({ name, appPath, worktreePath, branch, head, dirty, port, url, environment, writes }) => ({ name, appPath, worktreePath, branch, head, dirty, port, url, environment, writes })),
     })
   })
 
@@ -297,8 +392,11 @@ export async function createPanelServer(port: number, options: PanelServerOption
     res.json({ stopped: p })
   })
 
+  app.get('/favicon.ico', (_req, res) => res.status(204).end())
+
   const vite = await createViteServer({
     root: join(HERE, 'ui'),
+    cacheDir: panelViteCacheDir(port, instanceId),
     appType: 'spa',
     plugins: [react(), tailwindcss()],
     // Middleware-mode Vite defaults every panel to websocket port 24678.

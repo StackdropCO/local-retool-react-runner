@@ -6,9 +6,10 @@ import react from '@vitejs/plugin-react'
 import { TOOL_ROOT } from './paths.js'
 import { hooksVirtualPlugin } from './vitePlugin.js'
 import { readEndpointResourceRefs, readResourceRefs, createRunner, walkTs } from './endpointRunner.js'
-import { resolveResources, buildGlobals, validateLocalResourceBindings } from './resourceGlobals.js'
+import { resolveResources, buildGlobals, validateLocalResourceBindings, type ResourceMap } from './resourceGlobals.js'
 import type { McpClient } from './mcpClient.js'
-import { loadLocalResourceDefinitions } from './localResourceConfig.js'
+import { loadLocalResourceDefinitions, type LocalResourceMap } from './localResourceConfig.js'
+import type { RetoolEnvironment } from './environment.js'
 
 // The app frontend lives outside the tool root, so Vite can't resolve its bare
 // npm imports (react, radix, lucide, ...) — those packages are installed in the
@@ -40,35 +41,31 @@ export function discoverEndpoints(appDir: string): string[] {
 // execute_resource_ts unwraps to that same shape, so identity is correct.
 const normalize = (raw: unknown) => raw
 
-/**
- * The options `buildGlobals` receives. Extracted so the environment plumbing has a
- * falsifier: `environmentName` was threaded through mcpClient and buildGlobals but
- * silently dropped at this call site, so every resource call ran against the MCP's
- * default environment (production on most orgs) with no way to target another.
- * The key is omitted rather than set to undefined, which is what the MCP treats as
- * "use the default" and what exactOptionalPropertyTypes requires.
- */
-export function globalsOptions(
-  opts: { writes: boolean; environmentName?: string },
-  endpoint: string,
-  normalize: (raw: unknown) => unknown,
-): { writes: boolean; endpoint: string; normalize: (raw: unknown) => unknown; environmentName?: string } {
-  return {
-    writes: opts.writes,
-    endpoint,
-    normalize,
-    ...(opts.environmentName ? { environmentName: opts.environmentName } : {}),
+export function appViteCacheDir(port: number): string {
+  return join(TOOL_ROOT, 'node_modules', '.vite', `app-${port}`)
+}
+
+export async function assertResourcesAvailableInEnvironment(
+  mcp: McpClient,
+  resources: ResourceMap,
+  localResources: LocalResourceMap,
+  environmentName: RetoolEnvironment,
+): Promise<void> {
+  const resourceNames = Object.keys(resources).filter((resourceId) => !localResources[resourceId])
+  if (!resourceNames.length) return
+  try {
+    // Merely asking Retool to inject the selected resources is enough to
+    // validate environment availability; this does not execute a query.
+    await mcp.executeResourceTs(resourceNames, 'return true', environmentName)
+  } catch (error) {
+    throw new Error(
+      `${environmentName} environment rejected required Retool resources: ` +
+      String((error as Error)?.message ?? error),
+    )
   }
 }
 
-export async function startServer(opts: {
-  appDir: string
-  port: number
-  writes: boolean
-  mcp: McpClient
-  /** Retool environment to execute resource calls against. Omitted means the MCP's default. */
-  environmentName?: string
-}) {
+export async function startServer(opts: { appDir: string; port: number; writes: boolean; environmentName: RetoolEnvironment; mcp: McpClient }) {
   const endpoints = discoverEndpoints(opts.appDir)
   const refsByEndpoint = readEndpointResourceRefs(opts.appDir)
   const refs = readResourceRefs(opts.appDir)
@@ -76,6 +73,7 @@ export async function startServer(opts: {
   const map = await resolveResources(opts.mcp, refs, backendFiles.map((file) => readFileSync(file, 'utf8')))
   const localResources = loadLocalResourceDefinitions({ appResourceIds: new Set(refs.map((ref) => ref.name)) })
   validateLocalResourceBindings(map, localResources)
+  await assertResourcesAvailableInEnvironment(opts.mcp, map, localResources, opts.environmentName)
   for (const definition of Object.values(localResources)) {
     console.log(
       `[local-resource] ${definition.binding} (${definition.resourceId}) ` +
@@ -88,17 +86,20 @@ export async function startServer(opts: {
 
   app.post('/rpc/:endpoint', async (req, res) => {
     const endpoint = req.params.endpoint
-        const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
-        const endpointMap = Object.fromEntries(
-          Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
+    const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
+    const endpointMap = Object.fromEntries(
+      Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
     )
     const endpointLocalResources = Object.fromEntries(
       Object.entries(localResources).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
-        )
-        const globals = buildGlobals(opts.mcp, endpointMap, {
-          ...globalsOptions(opts, endpoint, normalize),
-          localResources: endpointLocalResources,
-        })
+    )
+    const globals = buildGlobals(opts.mcp, endpointMap, {
+      writes: opts.writes,
+      endpoint,
+      normalize,
+      environmentName: opts.environmentName,
+      localResources: endpointLocalResources,
+    })
     const runner = createRunner({ appDir: opts.appDir, globals })
     try {
       const result = await runner.run(endpoint, req.body?.params ?? {})
@@ -110,6 +111,7 @@ export async function startServer(opts: {
 
   const vite = await createViteServer({
     root: TOOL_ROOT,
+    cacheDir: appViteCacheDir(opts.port),
     appType: 'custom',
     // Unique HMR ws port per app so several runners can run at once (the panel
     // launches multiple). Derived from the app port to avoid collisions.

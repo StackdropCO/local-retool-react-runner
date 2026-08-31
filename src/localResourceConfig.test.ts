@@ -146,7 +146,7 @@ paths:
     })).toThrow(/outside.*local resource directory/i)
   })
 
-  it('rejects UUIDs that the app manifest does not reference', () => {
+  it('ignores shared registry UUIDs that the selected app does not reference', () => {
     const directory = temporaryDirectory()
     writeRegistry(directory, {
       binding: 'privateUpload',
@@ -155,9 +155,9 @@ paths:
     })
     writeFileSync(join(directory, 'upload.openapi.yaml'), validSpec)
 
-    expect(() => loadLocalResourceDefinitions({
+    expect(loadLocalResourceDefinitions({
       directory,
       appResourceIds: new Set(['different-uuid']),
-    })).toThrow(/resource-uuid.*not referenced/i)
+    })).toEqual({})
   })
 })

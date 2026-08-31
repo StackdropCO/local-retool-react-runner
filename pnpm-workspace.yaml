@@ -1,3 +1,4 @@
 # Allow esbuild (used by vite/tsx/vitest) to run its postinstall build script.
 allowBuilds:
+  core-js: false
   esbuild: true

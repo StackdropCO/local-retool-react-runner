@@ -9,11 +9,32 @@ import type {
   ScannedApp,
 } from './types'
 
+export type MissingRetoolResource = {
+  name: string
+  resourceId: string
+  url: string
+}
+
+export type PanelApiErrorDetails = {
+  error?: string
+  missingResources?: MissingRetoolResource[]
+}
+
+export class PanelApiError extends Error {
+  constructor(message: string, readonly details: PanelApiErrorDetails) {
+    super(message)
+    this.name = 'PanelApiError'
+  }
+}
+
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, init)
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`)
+    throw new PanelApiError(
+      typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`,
+      body,
+    )
   }
   return body as T
 }

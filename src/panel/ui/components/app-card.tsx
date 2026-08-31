@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RunInput, ScannedApp } from '../lib/types'
+import { PanelApiError, type MissingRetoolResource } from '../lib/api'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,10 +38,12 @@ export function AppCard({ app, onRun }: AppCardProps) {
     ?? worktrees.find((worktree) => worktree.branch === app.branch)
     ?? worktrees[0]
   const [worktreePath, setWorktreePath] = useState(initialWorktree?.worktreePath || '')
+  const [environment, setEnvironment] = useState<'staging' | 'production'>('staging')
   const [writes, setWrites] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [productionConfirmOpen, setProductionConfirmOpen] = useState(false)
   const [running, setRunning] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<{ message: string; missingResources: MissingRetoolResource[] } | null>(null)
 
   useEffect(() => {
     const next = worktrees.find((worktree) => worktree.appPath === app.path)
@@ -53,7 +56,7 @@ export function AppCard({ app, onRun }: AppCardProps) {
 
   const run = async () => {
     setRunning(true)
-    setError('')
+    setError(null)
     try {
       if (!selectedWorktree) throw new Error('Select a registered worktree before running this app.')
       await onRun({
@@ -61,13 +64,22 @@ export function AppCard({ app, onRun }: AppCardProps) {
         worktreePath: selectedWorktree.worktreePath,
         name: app.name,
         branch: selectedWorktree.branch || '',
+        environment,
         writes,
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        missingResources: cause instanceof PanelApiError ? cause.details.missingResources ?? [] : [],
+      })
     } finally {
       setRunning(false)
     }
+  }
+
+  const requestRun = () => {
+    if (environment === 'production') setProductionConfirmOpen(true)
+    else void run()
   }
 
   return (
@@ -87,13 +99,13 @@ export function AppCard({ app, onRun }: AppCardProps) {
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2">
           <select
             aria-label={`Worktree for ${app.name}`}
             title={selectedWorktree?.worktreePath}
             value={worktreePath}
             onChange={(event) => setWorktreePath(event.target.value)}
-            className="mono h-8 w-72 rounded-[4px] border border-input bg-card px-2 text-xs outline-none focus:border-ring"
+            className="mono h-8 w-64 rounded-[4px] border border-input bg-card px-2 text-xs outline-none focus:border-ring"
           >
             {worktrees.length ? (
               worktrees.map((item) => (
@@ -106,6 +118,18 @@ export function AppCard({ app, onRun }: AppCardProps) {
             )}
           </select>
 
+          <select
+            aria-label={`Environment for ${app.name}`}
+            value={environment}
+            onChange={(event) => setEnvironment(event.target.value as 'staging' | 'production')}
+            className={`mono h-8 w-28 rounded-[4px] border bg-card px-2 text-xs outline-none focus:border-ring ${
+              environment === 'production' ? 'border-destructive text-destructive' : 'border-input'
+            }`}
+          >
+            <option value="staging">staging</option>
+            <option value="production">production</option>
+          </select>
+
           {/* Writes gets exactly one signal here: the switch (plus a confirm). */}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Switch
@@ -116,28 +140,65 @@ export function AppCard({ app, onRun }: AppCardProps) {
             writes
           </label>
 
-          <Button size="sm" onClick={run} disabled={running || !selectedWorktree} aria-label={`Run ${app.name}`}>
+          <Button size="sm" onClick={requestRun} disabled={running || !selectedWorktree} aria-label={`Run ${app.name}`}>
             {running ? 'Starting…' : 'Run'}
           </Button>
         </div>
       </div>
       {error && (
         <Alert className="mt-2" variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            <p>{error.message}</p>
+            {error.missingResources.length > 0 && (
+              <p className="mt-1">
+                Missing Retool resources:{' '}
+                {error.missingResources.map((resource, index) => (
+                  <span key={resource.resourceId}>
+                    {index > 0 && ', '}
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium underline underline-offset-2"
+                    >
+                      {resource.name}
+                    </a>
+                  </span>
+                ))}
+              </p>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Enable writes for {app.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Enable writes in {environment} for {app.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Writes go to production resources. There is no sandbox.
+              Resource mutations will run against the selected Retool {environment} environment.
+              Local API resources continue to use their private local configuration.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => setWrites(true)}>Enable writes</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={productionConfirmOpen} onOpenChange={setProductionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run {app.name} in production?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Retool resource calls will use production. This preview is {writes ? 'write-enabled' : 'read-only'}.
+              Local API resources continue to use their private local configuration.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void run()}>Run in production</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPanelServer, type PanelServer } from './server'
+import { buildRunnerArgs, createPanelServer, panelViteCacheDir, runnerExitResponse, type PanelServer } from './server'
 
 const temporaryDirectories: string[] = []
 const validSpec = `openapi: 3.0.3
@@ -47,9 +47,10 @@ describe('panel server', () => {
   it('serves the React panel shell and keeps the status API available', async () => {
     panel = await createPanelServer(0)
 
-    const [page, status] = await Promise.all([
+    const [page, status, favicon] = await Promise.all([
       fetch(panel.url).then((response) => response.text()),
       fetch(`${panel.url}/api/status`).then((response) => response.json()),
+      fetch(`${panel.url}/favicon.ico`),
     ])
 
     expect(page).toContain('<div id="root"></div>')
@@ -60,6 +61,13 @@ describe('panel server', () => {
       localResources: expect.any(Array),
       localResourceError: expect.any(String),
     }))
+    expect(favicon.status).toBe(204)
+  })
+
+  it('isolates live and test panel dependency caches', () => {
+    expect(panelViteCacheDir(5170, 1)).toMatch(/node_modules\/\.vite\/panel-5170$/)
+    expect(panelViteCacheDir(0, 1)).toMatch(/node_modules\/\.vite\/panel-test-\d+-1$/)
+    expect(panelViteCacheDir(0, 1)).not.toBe(panelViteCacheDir(0, 2))
   })
 
   it('requires an exact worktree path instead of resolving a branch implicitly', async () => {
@@ -73,6 +81,76 @@ describe('panel server', () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toEqual({ error: 'worktreePath required' })
+  })
+
+  it('rejects unknown Retool environments before launching a runner', async () => {
+    panel = await createPanelServer(0)
+
+    const response = await fetch(`${panel.url}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ environment: 'preview' }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid environment "preview"; expected staging or production',
+    })
+  })
+
+  it('launches the child with the selected environment', () => {
+    expect(buildRunnerArgs({
+      appPath: '/repo/apps-v2/Group/App',
+      port: 5174,
+      mcpUrl: 'https://example.retool.com/mcp',
+      environment: 'staging',
+      writes: false,
+    })).toEqual([
+      'src/dev.ts', '--app', '/repo/apps-v2/Group/App', '--port', '5174',
+      '--mcp-url', 'https://example.retool.com/mcp', '--environment', 'staging',
+    ])
+  })
+
+  it('returns linked resource names instead of UUID-heavy environment errors', () => {
+    expect(runnerExitResponse(
+      'Shift Utilization Dashboard',
+      'staging',
+      1,
+      'Error: staging environment rejected required Retool resources: No resource named "slack-id" exists, No resource named "database-id" exists\n    at startServer',
+      [
+        { name: 'slack-id', displayName: 'Slack', type: 'slackopenapi' },
+        { name: 'database-id', displayName: 'Databricks', type: 'databricks' },
+        { name: 'available-id', displayName: 'Lakebase', type: 'databricksLakebase' },
+      ],
+      'https://example.retool.com/mcp',
+    )).toEqual({
+      error: "Shift Utilization Dashboard can't run in staging.",
+      missingResources: [
+        {
+          name: 'Slack',
+          resourceId: 'slack-id',
+          url: 'https://example.retool.com/resources/slack-id',
+        },
+        {
+          name: 'Databricks',
+          resourceId: 'database-id',
+          url: 'https://example.retool.com/resources/database-id',
+        },
+      ],
+    })
+  })
+
+  it('surfaces an unexpected runner error instead of hiding it behind the exit code', () => {
+    expect(runnerExitResponse(
+      'Shift Utilization Dashboard',
+      'staging',
+      1,
+      'Error: Local resource fleet360 is not referenced by this app\n    at startServer',
+      [],
+      'https://example.retool.com/mcp',
+    )).toEqual({
+      error: 'Shift Utilization Dashboard did not start in staging: Local resource fleet360 is not referenced by this app',
+    })
   })
 
   it('loads and saves a configured local OpenAPI document by UUID', async () => {

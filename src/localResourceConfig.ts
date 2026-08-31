@@ -158,9 +158,7 @@ export function loadLocalResourceEntries(options: {
   const entries: LocalResourceEntryMap = {}
 
   for (const [resourceId, rawEntry] of Object.entries(resources)) {
-    if (options.appResourceIds && !options.appResourceIds.has(resourceId)) {
-      throw new Error(`Local resource ${resourceId} is not referenced by this app`)
-    }
+    if (options.appResourceIds && !options.appResourceIds.has(resourceId)) continue
     const entry = object(rawEntry, `Local resource ${resourceId}`)
     exactFields(entry, ['binding', 'spec', 'baseUrl'], `Local resource ${resourceId}`)
     const binding = requiredString(entry.binding, `Local resource ${resourceId} binding`)

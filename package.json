@@ -1,10 +1,12 @@
 {
   "name": "local-mcp-runner",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@11.5.0",
   "scripts": {
     "test": "vitest run",
+    "typecheck": "tsx src/typecheckCli.ts",
     "probe": "tsx src/scripts/probe.ts",
     "start": "tsx src/index.ts",
     "dev": "tsx src/dev.ts",

@@ -55,6 +55,7 @@ export interface RunningApp {
   dirty: boolean
   port: number
   url: string
+  environment: 'staging' | 'production'
   writes: boolean
 }
 
@@ -70,6 +71,7 @@ export interface RunInput {
   worktreePath: string
   name: string
   branch: string
+  environment: 'staging' | 'production'
   writes: boolean
 }
 
@@ -81,6 +83,7 @@ export interface RunResult {
   worktreePath?: string
   head?: string
   dirty?: boolean
+  environment?: 'staging' | 'production'
   writes?: boolean
   alreadyRunning?: boolean
   warning?: string

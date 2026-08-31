@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PanelApp } from './PanelApp'
-import type { PanelApi } from './lib/api'
+import { PanelApiError, type PanelApi } from './lib/api'
 import type { ScannedApp } from './lib/types'
 
 const exampleApp = {
@@ -202,8 +202,61 @@ describe('PanelApp', () => {
       worktreePath: '/worktrees/feature',
       name: 'Example App',
       branch: 'feature',
+      environment: 'staging',
       writes: false,
     })
+  })
+
+  it('shows missing staging resources as direct Retool links', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.run = vi.fn(async () => {
+      throw new PanelApiError("Example App can't run in staging.", {
+        error: "Example App can't run in staging.",
+        missingResources: [
+          { name: 'Slack', resourceId: 'slack-id', url: 'https://example.retool.com/resources/slack-id' },
+          { name: 'Databricks', resourceId: 'database-id', url: 'https://example.retool.com/resources/database-id' },
+        ],
+      })
+    })
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Scan' }))
+    await user.click(screen.getByRole('button', { name: 'Run Example App' }))
+
+    expect(await screen.findByText("Example App can't run in staging.")).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Slack' })).toHaveAttribute(
+      'href',
+      'https://example.retool.com/resources/slack-id',
+    )
+    expect(screen.getByRole('link', { name: 'Databricks' })).toHaveAttribute(
+      'href',
+      'https://example.retool.com/resources/database-id',
+    )
+    expect(screen.queryByText('slack-id')).not.toBeInTheDocument()
+  })
+
+  it('requires confirmation before starting a production preview', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Scan' }))
+    await user.selectOptions(
+      await screen.findByLabelText('Environment for Example App'),
+      'production',
+    )
+    await user.click(screen.getByRole('button', { name: 'Run Example App' }))
+
+    expect(api.run).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('production')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('read-only')
+
+    await user.click(screen.getByRole('button', { name: 'Run in production' }))
+    await waitFor(() => expect(api.run).toHaveBeenCalledWith(expect.objectContaining({
+      environment: 'production',
+      writes: false,
+    })))
   })
 
   it('renders a stale scan payload without worktrees as unavailable instead of crashing', async () => {
@@ -229,7 +282,7 @@ describe('PanelApp', () => {
     const writeSwitch = await screen.findByRole('switch', { name: 'Enable writes for Example App' })
     await user.click(writeSwitch)
 
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('production')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('staging')
     expect(writeSwitch).toHaveAttribute('aria-checked', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Enable writes' }))
@@ -251,6 +304,7 @@ describe('PanelApp', () => {
         dirty: true,
         port: 5174,
         url: 'http://localhost:5174',
+        environment: 'staging' as const,
         writes: false,
       }],
     }))
@@ -258,6 +312,7 @@ describe('PanelApp', () => {
     render(<PanelApp api={api} />)
 
     expect(await screen.findByText('feature · 2222222 · modified')).toBeInTheDocument()
+    expect(screen.getByText('staging · read-only')).toBeInTheDocument()
     expect(screen.getByText('/worktrees/feature')).toBeInTheDocument()
   })
 })

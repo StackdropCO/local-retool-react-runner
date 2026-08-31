@@ -1,4 +1,6 @@
 node_modules/
+.pnpm-store/
+tmp/
 .mcp-auth/
 logs/
 config.json

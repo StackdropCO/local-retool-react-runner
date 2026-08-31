@@ -6,6 +6,7 @@ import { connectMcp } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
 import { repoRoot, validateWorktreeTarget } from './git.js'
+import { parseRetoolEnvironment } from './environment.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -17,10 +18,8 @@ async function main() {
   let appDir = arg('app', '')!
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
+  const environmentName = parseRetoolEnvironment(arg('environment', 'staging'))
   const branch = arg('branch', '')!
-  // Which Retool environment resource calls execute against. Without it every call
-  // lands on the MCP's default environment, which is production on most orgs.
-  const environmentName = arg('environment', '')!
   if (branch && appDir) {
     const worktreePath = repoRoot(appDir)
     if (!worktreePath) throw new Error(`app is not inside a Git worktree: ${appDir}`)
@@ -42,17 +41,11 @@ async function main() {
   }
   console.log(`[runner] app=${appDir}`)
   console.log(`[runner] mcp=${mcpUrl}`)
+  console.log(`[runner] environment=${environmentName}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
-  console.log(`[runner] environment=${environmentName || 'MCP default'}`)
   ensureFrontendDeps(appDir)
   const mcp = await connectMcp(mcpUrl)
-  const { url } = await startServer({
-    appDir,
-    port,
-    writes,
-    mcp,
-    ...(environmentName ? { environmentName } : {}),
-  })
+  const { url } = await startServer({ appDir, port, writes, environmentName, mcp })
   console.log(`[runner] serving ${url}`)
 }
 main().catch((e) => {

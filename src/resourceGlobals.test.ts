@@ -152,6 +152,24 @@ describe('buildGlobals', () => {
     expect(out).toEqual({ data: [{ ok: 1 }] })
   })
 
+  it('executes MCP resources in the selected Retool environment', async () => {
+    const mcp = fakeMcp({ data: [{ ok: 1 }] })
+    const globals: any = buildGlobals(mcp as any, map, {
+      writes: false,
+      endpoint: 'read',
+      environmentName: 'staging',
+      normalize: (raw) => raw,
+    })
+
+    await globals.databricks.query('SELECT 1')
+
+    expect(mcp.executeResourceTs).toHaveBeenCalledWith(
+      ['db-uuid'],
+      'return await databricks.query("SELECT 1")',
+      'staging',
+    )
+  })
+
   it('forwards SQL positional parameters to the Retool resource hook', async () => {
     const mcp = fakeMcp({ data: [{ ok: 1 }] })
     const g: any = buildGlobals(mcp as any, map, { writes: true, endpoint: 'e', normalize: (r) => r })

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPanelApi } from './api'
+import { createPanelApi, PanelApiError } from './api'
 
 describe('panel API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -17,6 +17,32 @@ describe('panel API', () => {
     await expect(createPanelApi().saveMcpUrl('bad')).rejects.toThrow('invalid URL')
   })
 
+  it('preserves structured missing-resource details from a failed run', async () => {
+    const body = {
+      error: "Example App can't run in staging.",
+      missingResources: [
+        { name: 'Slack', resourceId: 'slack-id', url: 'https://example.retool.com/resources/slack-id' },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => body,
+    }))
+
+    const failure = await createPanelApi().run({
+      appPath: '/repo/apps-v2/Group/App',
+      worktreePath: '/repo',
+      name: 'App',
+      branch: 'main',
+      environment: 'staging',
+      writes: false,
+    }).catch((error) => error)
+
+    expect(failure).toBeInstanceOf(PanelApiError)
+    expect(failure.details).toEqual(body)
+  })
+
   it('sends the existing run payload unchanged', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -29,6 +55,7 @@ describe('panel API', () => {
       worktreePath: '/repo',
       name: 'App',
       branch: 'main',
+      environment: 'staging',
       writes: false,
     })
 
@@ -40,6 +67,7 @@ describe('panel API', () => {
         worktreePath: '/repo',
         name: 'App',
         branch: 'main',
+        environment: 'staging',
         writes: false,
       }),
     })

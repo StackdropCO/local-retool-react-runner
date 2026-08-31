@@ -45,7 +45,9 @@ export function RunningApps({ apps, loading, error, onStop }: RunningAppsProps) 
             <p className="truncate text-sm font-medium">{app.name}</p>
             <p className="mono mt-0.5 text-xs text-muted-foreground">
               localhost:{app.port}
-              {app.writes ? ' · writes' : ''}
+            </p>
+            <p className={`mono mt-0.5 text-xs ${app.environment === 'production' ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {app.environment} · {app.writes ? 'writes enabled' : 'read-only'}
             </p>
             {/* Branch on its own line, wrapping — these names are long. */}
             {app.branch && (

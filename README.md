@@ -1,167 +1,227 @@
-# local-mcp-runner
+# Retool React Local Runner
 
-Runs an existing Retool **apps-as-code** (React SDK) app **locally**, using the
-Retool **MCP** as the backend/resource connection — no changes to the app, and
-nothing written into your apps repo.
+Run an existing Retool **Apps as Code** React app on your machine while its
+backend queries use your authenticated Retool resources through MCP.
 
-No org/machine defaults are baked in: you provide your own **MCP URL** and your
-own **apps repo directory** (both are saved after first use).
+The runner reads the app directly from its Git worktree, serves the frontend
+with Vite, and executes its backend endpoints locally. It does not generate
+files in, check out, reset, or otherwise modify your apps repository.
+
+> [!NOTE]
+> Retool React Local Runner is a Stackdrop project built for Retool Apps as
+> Code. It is not an official Retool product. The package and CLI are currently
+> named `local-mcp-runner`.
+
+## What it gives you
+
+- A local control panel for finding and running Apps as Code projects.
+- Live frontend updates and automatic backend restarts during development.
+- Authenticated access to the Retool resources declared by each app.
+- Explicit staging or production selection, with read-only mode by default.
+- Independent previews for multiple Git worktrees and branches.
+- App-level TypeScript checking without generating files in the apps repo.
+- Optional local execution for private OpenAPI-backed REST resources.
 
 ## Requirements
 
-- Node 20+
-- pnpm 10+ (`corepack enable` or `npm i -g pnpm`)
+- Node.js 20 or newer.
+- pnpm 11 (`corepack enable` is recommended; this repository pins pnpm 11.5.0).
+- Git.
+- Access to a Retool organization with MCP enabled.
+- A local checkout of your Retool Apps as Code repository.
 
-## Install (first time)
+## Quick start
 
-1. **Get the code** — clone or download the repository, then:
-   ```
-   cd local-mcp-runner
-   ```
-2. **Install dependencies:**
-   ```
-   pnpm install
-   ```
-3. **Have your Retool apps repo** checked out somewhere. The tool reads app
-   source from there; it never writes to it.
-4. **Start the control panel:**
-   ```
-   pnpm panel        # → http://localhost:5170
-   ```
-5. **In the panel:** enter **your** MCP URL (e.g. `https://<your-org>.retool.com/mcp`),
-   click **Save URL**, then **Authorize** — a browser tab opens once to
-   log in to your Retool org; the token is cached for next time.
-6. **Browse** to your apps repo folder → **Scan** → pick a registered **worktree**
-   next to the app → click **Run**. The preview opens on its own port and watches the
-   exact files in that worktree. Your MCP URL and repo dir are remembered for next time.
+Clone and install the runner:
 
-### Worktrees and parallel branches
-
-The panel discovers worktrees from `git worktree list`; it does not infer branch state
-from folder names. It never creates a worktree, checks out a branch, resets files, or
-pulls changes. Create/select the task worktree with Git or your agent first, then attach
-the panel to that same tree. This keeps the agent and preview on the same files, so
-frontend changes hot-reload and backend changes restart automatically.
-
-Each worktree gets an independent runner process and port, so multiple branches can run
-in parallel. The panel shows the selected worktree's path, branch, commit, and whether it
-has local modifications. If the path or branch changes after selection, starting the
-preview fails explicitly rather than switching the worktree behind your back.
-
-From the CLI, pass the app path inside the intended worktree. `--branch <name>` is an
-optional validation check for that existing worktree; it does not create or switch one.
-
-Prefer the terminal? Provide both the app and the MCP URL:
+```sh
+git clone https://github.com/StackdropCO/local-retool-react-runner.git
+cd local-retool-react-runner
+corepack enable
+pnpm install
 ```
-pnpm start -- --app "/abs/path/to/apps-v2/<Group>/<App>" --mcp-url "https://<your-org>.retool.com/mcp"
+
+Start the control panel:
+
+```sh
+pnpm panel
 ```
-(Once set in the panel, the saved URL is reused, so `--mcp-url` becomes optional.)
 
-## Control panel (easiest start)
+Open [http://localhost:5170](http://localhost:5170), then:
 
-    pnpm install
-    pnpm panel                # http://localhost:5170
+1. Enter your MCP URL, such as `https://<your-org>.retool.com/mcp`.
+2. Select **Save URL**, then **Authorize**. Your browser opens for Retool login.
+3. Select your local Apps as Code repository and scan it.
+4. Choose the registered worktree beside an app.
+5. Select the environment and write mode, then run the preview.
 
-A React and shadcn/ui control panel for setting the **MCP URL**, authorizing the
-local machine, inspecting queryable **resources**, scanning an apps repository,
-and running or stopping apps. Connection and process state stay visible in the
-header. Write access is disabled by default and requires an explicit warning
-confirmation. Registered worktrees can be previewed concurrently, with their exact
-path and Git state visible. Everything is also available from the CLI.
+The preview opens on its own port and watches the exact files in the selected
+worktree. The runner remembers the MCP URL and apps repo directory locally.
 
-## Run (CLI)
+> [!WARNING]
+> A production preview uses production Retool resources. Read-only mode blocks
+> common SQL mutation statements, but it is not a complete sandbox. Enabling
+> writes allows calls that can change real data. Query history also records the
+> exact SQL or resource code and positional parameters locally; treat those logs
+> as potentially sensitive.
 
-    pnpm install                                   # one-time: the tool's own deps
-    pnpm start -- --app "/path/to/app"             # read-only (default)
-    pnpm dev   -- --app "/path/to/app"             # same, but auto-restarts on changes
-    pnpm start -- --app "/path/to/app" --writes    # allow INSERT/UPDATE/DELETE via the MCP
+## Control panel
 
-`--app` is required (or use the panel). The MCP URL comes from `--mcp-url`, the
-`RETOOL_MCP_URL` env var, or whatever you saved in the panel. `--port` picks the
-port (default 5174).
+The control panel is the easiest way to:
 
-### Reloading on changes
+- Configure and authorize an MCP connection.
+- Inspect queryable Retool resources.
+- Scan an Apps as Code repository.
+- Select exact Git worktrees.
+- Choose staging or production.
+- Start, monitor, and stop app previews.
+- Configure private local OpenAPI resources.
 
-- **Frontend** edits (the app's `App.tsx`, `components/`, `lib/`, CSS) hot-reload
-  in the browser via Vite — no restart.
-- **Backend** edits (the app's `backend/**/*.ts` — queries, endpoints) and the
-  tool's own `src/**` run in the Node process. Under `pnpm dev` they trigger an
-  automatic server restart; under `pnpm start` you restart manually.
+Connection and process state remain visible in the header. Write access is off
+by default and requires confirmation. Production also requires confirmation,
+including for read-only previews.
 
-### Auth
+```sh
+pnpm panel # http://localhost:5170
+```
 
-When you first connect to a given MCP URL, a browser tab opens to log in to that
-Retool org. The token is cached per-host under `.mcp-auth/<host>/` and refreshes
-automatically, so later runs don't prompt. In the panel this happens when you
-click **Authorize**; from the CLI it happens on first run. You need
-access to whichever Retool org the MCP URL points at.
+## CLI
 
-## Adding another app (one command)
+Run an app directly from a terminal:
 
-    pnpm start -- --app "/abs/path/to/any/apps-v2/app" --port 5175
+```sh
+# Staging and read-only are the defaults.
+pnpm start -- --app "/absolute/path/to/apps-v2/Group/App"
 
-Everything is auto-detected from the app: its frontend deps are installed into
-this tool's `node_modules` on startup, endpoints are discovered under
-`backend/**` (any group dir — `shift/`, `readiness/`, …), the `hooks/backend/<group>`
-import is served virtually, and resources are read from the app's `package.json`.
-The app's entry is always `frontend/App.tsx`; `orgTheme.css` is optional.
+# Restart the backend automatically when files change.
+pnpm dev -- --app "/absolute/path/to/apps-v2/Group/App"
 
-## How it works
+# Use production resources in read-only mode.
+pnpm start -- --app "/absolute/path/to/apps-v2/Group/App" --environment production
 
-- **Vite** (root = this dir) serves the app's real `frontend/App.tsx` (aliased
-  `@app`). The app's frontend deps are installed here (via pnpm) and aliased so imports resolve.
-- The app imports `./hooks/backend/shift`, which Retool normally generates. We
-  serve it as an **in-memory Vite virtual module** — the hooks POST to
-  `/rpc/:endpoint`.
-- `POST /rpc/:endpoint` runs the app's own `backend/<group>/<endpoint>.ts` with
-  the resource globals declared by that app injected at runtime.
-- Each global forwards its call into `retool_execute_resource_ts` over a
-  standalone-OAuth MCP client. The result shape (`{ data: [...] }`) matches what
-  the backend expects.
+# Explicitly allow writes against staging.
+pnpm start -- --app "/absolute/path/to/apps-v2/Group/App" --environment staging --writes
+```
 
-For example, an app might call `sqlWarehouse.query(sql)`,
-`operationalDb.query(sql)`, or `businessApi.namespace.operation(...)`. Those
-names come from the app and MCP resource bindings; the runner does not bake in
-organization-specific resources.
+`--app` is required. The MCP URL is read, in order, from `--mcp-url`, the value
+saved through the panel, or the `RETOOL_MCP_URL` environment variable. Use
+`--port` to change the preview port from its default of `5174`.
 
-Resources are matched by the UUIDs in `resourceReferencesByFile`, not by display
-name. References stay scoped to the endpoint that declared them. If Retool's
-generated TypeScript definition uses different casing from the checked-in app,
-the runner exposes the app spelling and executes with the spelling present in
-the app source, falling back to the generated spelling only for a precise
-`<binding> is not defined` error. Ambiguous aliases fail at startup.
+To supply the URL explicitly:
 
-### Local REST resources
+```sh
+pnpm start -- \
+  --app "/absolute/path/to/apps-v2/Group/App" \
+  --mcp-url "https://<your-org>.retool.com/mcp"
+```
 
-Retool MCP cannot execute a plain `restapi` resource that has only a base URL.
-The runner can execute those resources locally when you provide a private
-OpenAPI definition keyed by the resource UUID. A configured local UUID always
-takes precedence over MCP; resources without a local entry keep their existing
-MCP behavior.
+## Worktrees and parallel branches
 
-Copy the fake examples and replace every example value locally:
+The panel discovers worktrees through `git worktree list`. It does not infer a
+branch from a directory name, create worktrees, check out branches, pull, reset,
+or switch files behind your back.
+
+Create the task worktree with Git or your coding agent first, then select that
+same path in the panel. The panel shows its path, branch, commit, and local
+modification state. If the path or branch changes after selection, startup fails
+instead of silently attaching to different code.
+
+Each worktree gets an independent runner process and port, so several branches
+can be previewed concurrently. From the CLI, pass the app path inside the target
+worktree. `--branch <name>` validates that existing worktree; it does not create
+or switch one.
+
+## Environments and write mode
+
+`--environment` accepts `staging` or `production` and defaults to `staging`.
+The runner passes the selected value to Retool MCP as `environmentName` for
+every non-local resource call.
+
+Before opening a preview port, the runner asks Retool to resolve all required
+non-local resources in that environment without executing a query. Startup
+stops if a resource cannot be resolved, and the panel reports the environment
+and missing resource names. The runner never falls back from staging to
+production.
+
+An already-running app is not silently reused with a different environment or
+write mode. Stop it before changing either setting. Private local OpenAPI
+resources use their configured local base URL instead of the Retool environment.
+
+## Typecheck an app
+
+Typecheck one app in one registered worktree without starting a preview:
+
+```sh
+pnpm typecheck -- \
+  --branch "feature/report" \
+  --app "Operations/Report App"
+```
+
+`--app` may be relative to `apps-v2/`, start with `apps-v2/`, or be an absolute
+app path. The apps repo defaults to the path saved in the panel. Override it
+with `--repo "/path/to/apps-repo"`.
+
+The named branch must have exactly one registered Git worktree. The command
+checks the app's `frontend/` and `backend/` files without checking out a branch
+or writing generated hooks, resource declarations, configuration, or
+dependencies into the apps repo. Diagnostics use `file:line:column` locations,
+and the process exits `0` when clean or `1` for type or configuration errors.
+
+For structured output:
+
+```sh
+pnpm typecheck -- \
+  --branch "feature/report" \
+  --app "Operations/Report App" \
+  --json
+```
+
+## Reloading behavior
+
+- Frontend changes in `App.tsx`, `components/`, `lib/`, and CSS hot-reload
+  through Vite without restarting the preview.
+- App backend changes under `backend/**/*.ts` and changes to the runner's own
+  `src/**` restart automatically under `pnpm dev`.
+- Under `pnpm start`, backend changes require a manual restart.
+
+## Authentication and local data
+
+On first connection to an MCP URL, a browser window opens for Retool login.
+Tokens are cached by host under `.mcp-auth/<host>/` and refreshed automatically.
+The following local data is excluded from Git by this repository:
+
+- `.mcp-auth/` — OAuth credentials.
+- `config.json` — the saved MCP URL and apps repo path.
+- `logs/` — resource query history.
+- `.local-resources/` — private OpenAPI definitions and local base URLs.
+
+Do not copy these files into commits, issue reports, or support messages without
+reviewing them for credentials and sensitive application data.
+
+## Local REST resources
+
+Retool MCP cannot execute a plain `restapi` resource that contains only a base
+URL. The runner can execute it locally when you provide a private OpenAPI
+definition keyed by the Retool resource UUID. A configured local UUID takes
+precedence over MCP; resources without a local entry continue using MCP.
+
+Create a private local registry from the fake examples:
 
 ```sh
 cp -R resources.example .local-resources
 ```
 
-`.local-resources/` is gitignored. Its filled registry, real OpenAPI documents,
-base URLs, and environment-specific details are not committed to this repo or
-the Retool apps repo. `resources.json` maps each Retool UUID to its app binding,
-spec path, and HTTPS base URL. The base URL must match an OpenAPI `servers`
-origin, and each request must match a documented method and path.
+Replace every example value locally. `.local-resources/` is ignored by Git.
+Its `resources.json` maps each Retool UUID to an app binding, OpenAPI spec path,
+and HTTPS base URL. The base URL must match an origin in the OpenAPI `servers`
+list, and requests must match a documented method and path.
 
-The control panel's **Local API specs** card shows each loaded binding, UUID,
-private spec filename, and short content hash. The MCP resource table labels a
-matching UUID as **local**. Click **Edit** to view or paste YAML/JSON in a
-lightweight text modal. **Validate and save** parses the document and applies
-the same OpenAPI server, method, and path checks used by the runner. A valid
-document atomically replaces that resource's existing private spec; an invalid
-document stays in the editor with an error and leaves the file untouched. The
-panel resolves the file from the configured UUID and never accepts a filesystem
-path from the browser.
+The registry is shared across apps and branches, but a preview loads only the
+entries referenced by its selected app manifest. The control panel can inspect,
+validate, and atomically update a configured private spec. Restart running
+previews after saving a spec so they load the updated policy.
 
-The app keeps its Retool-facing interface:
+Apps keep their Retool-facing resource interface:
 
 ```ts
 await exampleUpload.query({
@@ -171,35 +231,56 @@ await exampleUpload.query({
 })
 ```
 
-`GET`, `HEAD`, and `OPTIONS` work in read-only previews. `POST`, `PUT`, `PATCH`,
-and `DELETE` require `--writes`. Redirects are not followed, and logs omit
-request bodies, authorization headers, and signed query values.
-
-After saving, the card refreshes the content hash. Restart any running app
-preview to make that preview load the updated policy; startup prints its path
-and content hash. Update a definition in place while the Retool UUID is
-unchanged. Create a new entry only for a new Retool resource UUID or when two
-incompatible API versions must remain available in parallel.
+`GET`, `HEAD`, and `OPTIONS` work in read-only mode. `POST`, `PUT`, `PATCH`, and
+`DELETE` require `--writes`. Redirects are not followed, and logs omit request
+bodies, authorization headers, and signed query values.
 
 ## Query history
 
-Every MCP `execute_resource_ts` call is appended to
-`logs/queries-YYYY-MM-DD.jsonl` — resource, the exact SQL/code, ok/error, row
-count, duration. SQL text and any positional parameter array are included in the
-generated resource call, giving a diffable history of what actually ran.
+Every MCP `execute_resource_ts` call is appended to a daily JSON Lines file at
+`logs/queries-YYYY-MM-DD.jsonl`. Entries include the resource, exact SQL or
+resource code (including any serialized positional parameters), success or
+error state, row count, and duration. The directory is ignored by Git, but its
+contents may be sensitive.
 
-## Read-only vs writes
+## How it works
 
-Read-only is the default: any `INSERT/UPDATE/DELETE/...` is detected in the SQL
-shim and blocked **before** it reaches the MCP. Pass `--writes` to allow them
-(these calls may affect production data; the runner does not provide a sandbox).
+1. Vite serves the app's real `frontend/App.tsx` through the `@app` alias.
+2. The runner provides Retool-generated backend hooks as in-memory Vite virtual
+   modules that post to `/rpc/:endpoint`.
+3. The RPC route executes the app's own `backend/<group>/<endpoint>.ts` locally.
+4. Resource globals declared by that endpoint are injected at runtime.
+5. Each non-local global forwards its call to `retool_execute_resource_ts`
+   through an authenticated MCP client.
+
+Resources are matched using UUIDs from `resourceReferencesByFile`, not display
+names, and stay scoped to the endpoint that declared them. If generated Retool
+types use different casing from the checked-in app, the runner can expose the
+app spelling and retry the generated spelling for a precise undefined-binding
+error. Ambiguous aliases fail during startup.
+
+Frontend dependencies required by an app are installed in this runner's
+`node_modules`; they are not written into the apps repository. The expected app
+entry point is `frontend/App.tsx`, and `orgTheme.css` is optional.
 
 ## Compatibility
 
-- SQL resources with `.query(sql)` and `.query(sql, params)` interfaces are supported.
+- SQL resources exposing `.query(sql)` or `.query(sql, params)` are supported.
 - OpenAPI-annotated REST resources are supported through a dynamic method proxy.
-- Other resource types may need a dedicated shim.
-- Very large analytical queries can exceed MCP or upstream gateway limits even
-  when smaller queries against the same resource succeed.
+- Other resource types may require a dedicated shim.
+- Very large analytical queries may exceed MCP or upstream gateway limits even
+  when smaller calls to the same resource succeed.
 - OAuth refresh, write gating, and query-history logging are handled by the
-  runner rather than individual apps.
+  runner rather than by individual apps.
+
+## Project status
+
+The project is under active development. Interfaces and supported Retool
+resource behaviors may change as Apps as Code and MCP evolve.
+
+## License
+
+Copyright 2026 Stackdrop.
+
+Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for
+attribution and trademark information.
