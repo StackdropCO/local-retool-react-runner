@@ -40,7 +40,35 @@ export function discoverEndpoints(appDir: string): string[] {
 // execute_resource_ts unwraps to that same shape, so identity is correct.
 const normalize = (raw: unknown) => raw
 
-export async function startServer(opts: { appDir: string; port: number; writes: boolean; mcp: McpClient }) {
+/**
+ * The options `buildGlobals` receives. Extracted so the environment plumbing has a
+ * falsifier: `environmentName` was threaded through mcpClient and buildGlobals but
+ * silently dropped at this call site, so every resource call ran against the MCP's
+ * default environment (production on most orgs) with no way to target another.
+ * The key is omitted rather than set to undefined, which is what the MCP treats as
+ * "use the default" and what exactOptionalPropertyTypes requires.
+ */
+export function globalsOptions(
+  opts: { writes: boolean; environmentName?: string },
+  endpoint: string,
+  normalize: (raw: unknown) => unknown,
+): { writes: boolean; endpoint: string; normalize: (raw: unknown) => unknown; environmentName?: string } {
+  return {
+    writes: opts.writes,
+    endpoint,
+    normalize,
+    ...(opts.environmentName ? { environmentName: opts.environmentName } : {}),
+  }
+}
+
+export async function startServer(opts: {
+  appDir: string
+  port: number
+  writes: boolean
+  mcp: McpClient
+  /** Retool environment to execute resource calls against. Omitted means the MCP's default. */
+  environmentName?: string
+}) {
   const endpoints = discoverEndpoints(opts.appDir)
   const refsByEndpoint = readEndpointResourceRefs(opts.appDir)
   const refs = readResourceRefs(opts.appDir)
@@ -60,19 +88,17 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
 
   app.post('/rpc/:endpoint', async (req, res) => {
     const endpoint = req.params.endpoint
-    const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
-    const endpointMap = Object.fromEntries(
-      Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
+        const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
+        const endpointMap = Object.fromEntries(
+          Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
     )
     const endpointLocalResources = Object.fromEntries(
       Object.entries(localResources).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
-    )
-    const globals = buildGlobals(opts.mcp, endpointMap, {
-      writes: opts.writes,
-      endpoint,
-      normalize,
-      localResources: endpointLocalResources,
-    })
+        )
+        const globals = buildGlobals(opts.mcp, endpointMap, {
+          ...globalsOptions(opts, endpoint, normalize),
+          localResources: endpointLocalResources,
+        })
     const runner = createRunner({ appDir: opts.appDir, globals })
     try {
       const result = await runner.run(endpoint, req.body?.params ?? {})
