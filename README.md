@@ -26,6 +26,9 @@ files in, check out, reset, or otherwise modify your apps repository.
 - **Agent-ready typechecking:** coding agents and LLMs can typecheck one app in
   one exact branch worktree and consume stable JSON diagnostics without starting
   a preview or generating files in the apps repo.
+- **App-level test execution:** run an Apps as Code app's local Vitest suite
+  through the runner with `--root`, without installing Vitest in the app
+  repository.
 - **More reliable parallel development:** each worktree preview has its own
   process, port, and Vite cache. The panel displays its branch, commit, dirty
   state, environment, and write mode.
@@ -157,6 +160,7 @@ pnpm panel # http://localhost:5170
 | `pnpm start -- --app <path>` | Run one app until the process is stopped. |
 | `pnpm dev -- --app <path>` | Run one app and restart its backend when source files change. |
 | `pnpm typecheck -- --branch <name> --app <app>` | Typecheck one app in one registered branch worktree. |
+| `pnpm exec vitest run --root <app-path>` | Run an app's local Vitest suite using the runner's installed Vitest. |
 | `pnpm test` | Run the runner's Vitest suite. |
 
 `pnpm probe` is an internal maintainer diagnostic tied to repository-specific
@@ -309,6 +313,27 @@ and use the structured diagnostics to locate and repair errors before running
 the app. Repeating the command is deterministic for the same worktree state.
 It does not switch branches, start a preview, call application resources, or
 write generated files into the app repository.
+
+## Test an Apps as Code app
+
+An app can keep ordinary Vitest files in its own directory and run them with
+the Vitest installation already provided by this runner:
+
+```sh
+pnpm exec vitest run --root "/absolute/path/to/apps-v2/Group/App"
+```
+
+The app does not need to declare or install its own Vitest dependency. The
+`--root` path makes Vitest discover the app's test files and resolve their
+imports against that app's frontend and backend source.
+
+This command runs ordinary local tests. It does not start an app preview,
+connect to Retool, or inject resource globals such as database and REST
+clients. Keep these tests focused on pure functions and adapters, or provide
+explicit local mocks for external dependencies. Use the preview runner when a
+test needs authenticated Retool resources.
+
+`pnpm test` is different: it runs this runner repository's own test suite.
 
 ## Reloading behavior
 
