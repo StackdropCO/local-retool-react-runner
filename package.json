@@ -3,9 +3,13 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "exports": {
+    "./live-sql": "./src/liveSql.ts"
+  },
   "packageManager": "pnpm@11.5.0",
   "scripts": {
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.config.live.ts",
     "typecheck": "tsx src/typecheckCli.ts",
     "probe": "tsx src/scripts/probe.ts",
     "start": "tsx src/index.ts",

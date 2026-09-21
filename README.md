@@ -412,6 +412,50 @@ contents may be sensitive.
 5. Each non-local global forwards its call to `retool_execute_resource_ts`
    through an authenticated MCP client.
 
+## Programmatic live SQL tests
+
+Live SQL checks are a separate, explicit Vitest project. The MCP only executes
+the SQL and returns rows; assertions remain ordinary Vitest assertions. The
+default `pnpm test` command never discovers files under `tests/live/`.
+
+Authorize the MCP once using the runner or `pnpm probe`, then run the smoke test
+with a real Retool resource UUID. The helper uses the MCP URL saved by the
+control panel; `RETOOL_MCP_URL` can override it:
+
+```sh
+LIVE_SQL_RESOURCE_ID=00000000-0000-0000-0000-000000000000 \
+pnpm test:live
+```
+
+Apps can import the same helper through the workspace package and keep their
+own live assertions beside their SQL builders:
+
+```ts
+import { afterAll, beforeAll, expect, it } from 'vitest'
+import { createLiveSqlRunner, type LiveSqlRunner } from 'local-mcp-runner/live-sql'
+
+let live: LiveSqlRunner
+beforeAll(async () => {
+  live = await createLiveSqlRunner({
+    resources: { databricks: process.env.LIVE_SQL_RESOURCE_ID! },
+  })
+})
+afterAll(() => live.close())
+
+it('keeps the attributed total within two percent of the source total', async () => {
+  const rows = await live.runSql<{ attributed: number; source: number }>('databricks', buildLeadAttributionSql())
+  const { attributed, source } = rows[0]
+  expect(rows.length).toBeGreaterThan(0)
+  expect(Math.abs(attributed - source) / Math.abs(source)).toBeLessThanOrEqual(0.02)
+})
+```
+
+`createLiveSqlRunner` resolves resource bindings once, reuses one MCP
+connection, accepts positional SQL parameters, and rejects obvious write
+statements before they reach MCP. It requires the existing OAuth cache by
+default, so a test run cannot unexpectedly stop to open an authorization
+browser.
+
 Resources are matched using UUIDs from `resourceReferencesByFile`, not display
 names, and stay scoped to the endpoint that declared them. If generated Retool
 types use different casing from the checked-in app, the runner can expose the
