@@ -35,20 +35,47 @@ async function post(path, params) {
   return `${head}\n\n${hooks}\n`
 }
 
+export function currentUserHookModuleSource(endpoint = '/api/current-user'): string {
+  return `import { useEffect, useState } from 'react'
+
+export function useCurrentUser() {
+  const [state, setState] = useState({ user: null, loading: true, error: null })
+  useEffect(() => {
+    let active = true
+    fetch('${endpoint}')
+      .then(async (response) => {
+        const body = await response.json()
+        if (!response.ok) throw new Error(body?.error || ('HTTP ' + response.status))
+        if (active) setState({ user: body.user, loading: false, error: null })
+      })
+      .catch((error) => {
+        if (active) setState({ user: null, loading: false, error: String((error && error.message) || error) })
+      })
+    return () => { active = false }
+  }, [])
+  return state
+}
+`
+}
+
 export function hooksVirtualPlugin(opts: { appDir: string; endpoints: string[]; rpcBase?: string }): Plugin {
   const rpcBase = opts.rpcBase ?? '/rpc'
   // Match any app's generated backend hooks import: ./hooks/backend/<group>.
   const marker = /(^|\/)hooks\/backend\/[^/]+$/
+  const currentUserMarker = /(^|\/)hooks\/useCurrentUser$/
   const virtualId = '\0virtual:local-mcp-runner-hooks'
+  const currentUserVirtualId = '\0virtual:local-mcp-runner-current-user'
   return {
     name: 'local-mcp-runner-hooks',
     resolveId(id) {
       const clean = id.replace(/\.tsx?$/, '')
       if (marker.test(clean)) return virtualId
+      if (currentUserMarker.test(clean)) return currentUserVirtualId
       return null
     },
     load(id) {
       if (id === virtualId) return hookModuleSource(opts.endpoints, rpcBase)
+      if (id === currentUserVirtualId) return currentUserHookModuleSource()
       return null
     },
   }

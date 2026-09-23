@@ -1,10 +1,11 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { TOOL_ROOT } from './paths.js'
+import type { CurrentUser } from './currentUser.js'
 
 // Small persisted config (git-ignored) so the MCP URL and last-used repo dir
 // survive restarts and page reloads. Tokens live separately under .mcp-auth/.
-export type Config = { mcpUrl?: string; repoDir?: string }
+export type Config = { mcpUrl?: string; repoDir?: string; currentUser?: CurrentUser }
 
 const FILE = join(TOOL_ROOT, 'config.json')
 

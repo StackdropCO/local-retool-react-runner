@@ -18,7 +18,7 @@ function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) 
 }
 
 function TableHead({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
-  return <th className={cn('h-10 px-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground', className)} {...props} />
+  return <th className={cn('h-10 px-3 text-left align-middle text-xs font-medium text-muted-foreground', className)} {...props} />
 }
 
 function TableCell({ className, ...props }: TdHTMLAttributes<HTMLTableCellElement>) {

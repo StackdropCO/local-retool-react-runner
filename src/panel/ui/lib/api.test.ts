@@ -91,4 +91,21 @@ describe('panel API', () => {
       body: JSON.stringify({ content: 'openapi: 3.0.3' }),
     })
   })
+
+  it('saves the emulated current user through the identity endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+    const currentUser = {
+      id: 1, email: 'dev@example.com', firstName: 'Dev', lastName: 'User', fullName: 'Dev User',
+      profilePhotoUrl: null, groups: [], metadata: {}, sid: 'user_dev', externalIdentifier: null, locale: 'en',
+    }
+
+    await createPanelApi().saveCurrentUser(currentUser)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/current-user', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currentUser }),
+    })
+  })
 })

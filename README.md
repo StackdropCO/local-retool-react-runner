@@ -456,6 +456,136 @@ statements before they reach MCP. It requires the existing OAuth cache by
 default, so a test run cannot unexpectedly stop to open an authorization
 browser.
 
+For live checks, gate the selected Retool environment against a value returned
+by the database itself. Merely passing `environmentName: 'staging'` proves what
+was requested, not where the resource ultimately connected. A dedicated
+single-row environment metadata table is strongest; a distinct database name
+is a useful fallback:
+
+```ts
+const live = await createLiveSqlRunner({
+  resources: { postgres: process.env.LIVE_SQL_RESOURCE_ID! },
+  environmentName: 'staging',
+  environmentGate: {
+    resource: 'postgres',
+    sql: 'SELECT current_database() AS database_name',
+    expected: { database_name: 'analytics_staging' },
+  },
+})
+```
+
+The runner executes this read-only query before it becomes available to tests
+and fails the suite on zero rows, multiple rows, a query error, or any exact
+value mismatch. Live SQL remains read-only regardless of the gate.
+
+## Disposable PostgreSQL tests
+
+For the complete setup, including opt-in Vitest configuration, schema capture,
+Databricks fixtures, mixed-resource endpoint tests, environment gates, and
+troubleshooting, see the
+[integration testing tutorial](docs/INTEGRATION_TESTING_TUTORIAL.md).
+
+Use a fresh Docker-backed PostgreSQL database when a test needs to exercise
+destructive SQL or database behavior without touching a Retool environment.
+The fixture chooses an unused local port, supports positional parameters,
+replays schema and seed SQL on reset, and force-removes its container on close.
+Disposable tests have no Retool environment selector or MCP client at all;
+that separation is the primary protection against accidental production use.
+
+Capture a schema-only fixture once through the authenticated MCP resource:
+
+```sh
+pnpm schema:postgres -- \
+  --resource 00000000-0000-0000-0000-000000000000 \
+  --environment staging \
+  --out tests/fixtures/postgres-schema.sql
+```
+
+The capture reads PostgreSQL catalogs only; it never selects application rows.
+Review the generated DDL before committing it. Use explicit, sanitized seed
+fixtures for the rows a test needs. The MCP snapshot covers schemas, enums,
+sequences, tables, constraints, standalone indexes, and views. For databases
+that depend on extensions, functions, triggers, policies, or grants, use a
+reviewed `pg_dump --schema-only --no-owner --no-privileges` fixture instead.
+
+```ts
+import { readFileSync } from 'node:fs'
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
+import {
+  createDisposablePostgres,
+  type DisposablePostgres,
+} from 'local-mcp-runner/test-postgres'
+
+let database: DisposablePostgres
+
+beforeAll(async () => {
+  database = await createDisposablePostgres({
+    schemaSql: readFileSync('tests/fixtures/postgres-schema.sql', 'utf8'),
+    seedSql: `INSERT INTO shifts (id, status) VALUES (1, 'open')`,
+  })
+})
+beforeEach(() => database.reset())
+afterAll(() => database.close())
+
+it('can exercise destructive behavior locally', async () => {
+  await database.runSql('DELETE FROM shifts WHERE id = $1', [1])
+  const [{ count }] = await database.runSql<{ count: string }>(
+    'SELECT count(*) FROM shifts',
+  )
+  expect(Number(count)).toBe(0)
+})
+```
+
+Docker is the only external runtime requirement. The first run pulls
+`postgres:16-alpine`; subsequent suites reuse the image but always get a new
+container. Give Docker-starting hooks a generous timeout in the app's opt-in
+integration-test configuration.
+
+### Mock warehouse and API resources
+
+Keep transactional SQL real while replacing Databricks or external APIs with
+strict deterministic mocks. A mock fails immediately for an unexpected query
+or call, records every invocation, and `assertSatisfied()` detects expected
+calls that never happened. Rules expect one call unless `times` is supplied.
+
+```ts
+import {
+  createBackendTestRunner,
+  createPostgresTestResource,
+  createSqlResourceMock,
+} from 'local-mcp-runner/test-resources'
+
+it('builds a report using local writes and mocked warehouse data', async () => {
+  const databricks = createSqlResourceMock([{
+    name: 'utilization facts',
+    match: /FROM analytics\.shift_utilization/,
+    params: ['lhr'],
+    rows: [{ shift_id: 101, utilized_minutes: 420 }],
+  }])
+  const runner = createBackendTestRunner({
+    appDir: '/absolute/path/to/app',
+    globals: {
+      lakebaseRetoolOltp: createPostgresTestResource(database),
+      databricks: databricks.resource,
+    },
+    user: { email: 'integration-test@example.test' },
+  })
+
+  try {
+    const result = await runner.run('publishShiftReport', { site: 'lhr' })
+    expect(result).toMatchObject({ published: true })
+    databricks.assertSatisfied()
+  } finally {
+    runner.close()
+  }
+})
+```
+
+`createRestResourceMock` provides the same strict behavior for namespaced calls
+such as `slack.chat.postMessage(...)`. These backend integration tests receive
+only the globals listed in the test, so no fallback to MCP or a Retool
+environment is possible.
+
 Resources are matched using UUIDs from `resourceReferencesByFile`, not display
 names, and stay scoped to the endpoint that declared them. If generated Retool
 types use different casing from the checked-in app, the runner can expose the

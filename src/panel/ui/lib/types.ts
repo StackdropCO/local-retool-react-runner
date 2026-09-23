@@ -5,6 +5,26 @@ export interface PanelStatus {
   repoDir: string
   localResources?: LocalResourceSummary[]
   localResourceError?: string
+  currentUser?: CurrentUser
+}
+
+export interface RetoolGroup {
+  id: number
+  name: string
+}
+
+export interface CurrentUser {
+  id: number
+  email: string
+  firstName: string
+  lastName: string
+  fullName: string
+  profilePhotoUrl: string | null
+  groups: RetoolGroup[]
+  metadata: Record<string, unknown>
+  sid: string
+  externalIdentifier: string | null
+  locale: string
 }
 
 export interface LocalResourceSummary {

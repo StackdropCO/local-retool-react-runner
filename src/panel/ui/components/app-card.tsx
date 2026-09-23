@@ -53,6 +53,9 @@ export function AppCard({ app, onRun }: AppCardProps) {
   }, [app.path, app.branch, worktrees])
 
   const selectedWorktree = worktrees.find((worktree) => worktree.worktreePath === worktreePath)
+  const resourceSummary = app.resources.length
+    ? app.resources.map((resource) => resource.displayName).join(', ')
+    : 'No resources'
 
   const run = async () => {
     setRunning(true)
@@ -83,29 +86,49 @@ export function AppCard({ app, onRun }: AppCardProps) {
   }
 
   return (
-    <div className="border-b px-4 py-3 last:border-b-0">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="border-b px-5 py-4 last:border-b-0">
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <h3 className="truncate text-sm font-medium">{app.name}</h3>
-            <span className="text-xs text-muted-foreground">{app.group}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-sm font-semibold" title={app.name}>{app.name}</h3>
+            <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {app.group}
+            </span>
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p
+            className="mt-1 truncate text-xs text-muted-foreground"
+            title={`${app.endpoints.length} endpoints · ${resourceSummary}`}
+          >
             {app.endpoints.length} endpoint{app.endpoints.length === 1 ? '' : 's'}
-            {app.resources.length ? ` · ${app.resources.map((resource) => resource.displayName).join(', ')}` : ' · no resources'}
+            {` · ${resourceSummary}`}
           </p>
-          <p className="mono mt-0.5 truncate text-xs text-muted-foreground/80" title={app.path}>
+          <p className="mono mt-1 truncate text-[11px] text-muted-foreground/75" title={app.path}>
             {app.path}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <Button
+          size="sm"
+          className="mt-0.5"
+          onClick={requestRun}
+          disabled={running || !selectedWorktree}
+          aria-label={`Run ${app.name}`}
+        >
+          {running ? 'Starting…' : 'Run'}
+        </Button>
+      </div>
+
+      <div className="mt-3 grid items-end gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+        <label className="min-w-0 space-y-1">
+          <span className="block text-xs font-semibold text-muted-foreground">
+            Worktree
+          </span>
           <select
             aria-label={`Worktree for ${app.name}`}
             title={selectedWorktree?.worktreePath}
             value={worktreePath}
             onChange={(event) => setWorktreePath(event.target.value)}
-            className="mono h-8 w-64 rounded-[4px] border border-input bg-card px-2 text-xs outline-none focus:border-ring"
+            className="mono h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
           >
             {worktrees.length ? (
               worktrees.map((item) => (
@@ -117,32 +140,37 @@ export function AppCard({ app, onRun }: AppCardProps) {
               <option value="">no registered worktree</option>
             )}
           </select>
+        </label>
 
+        <label className="space-y-1">
+          <span className="block text-xs font-semibold text-muted-foreground">
+            Environment
+          </span>
           <select
             aria-label={`Environment for ${app.name}`}
             value={environment}
             onChange={(event) => setEnvironment(event.target.value as 'staging' | 'production')}
-            className={`mono h-8 w-28 rounded-[4px] border bg-card px-2 text-xs outline-none focus:border-ring ${
+            className={`mono h-9 w-full rounded-md border bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring ${
               environment === 'production' ? 'border-destructive text-destructive' : 'border-input'
             }`}
           >
             <option value="staging">staging</option>
             <option value="production">production</option>
           </select>
+        </label>
 
-          {/* Writes gets exactly one signal here: the switch (plus a confirm). */}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="space-y-1">
+          <span className="block text-xs font-semibold text-muted-foreground">
+            Access
+          </span>
+          <label className="flex h-9 min-w-32 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground">
             <Switch
               aria-label={`Enable writes for ${app.name}`}
               checked={writes}
               onCheckedChange={(checked) => (checked ? setConfirmOpen(true) : setWrites(false))}
             />
-            writes
+            <span>{writes ? 'Writes enabled' : 'Read only'}</span>
           </label>
-
-          <Button size="sm" onClick={requestRun} disabled={running || !selectedWorktree} aria-label={`Run ${app.name}`}>
-            {running ? 'Starting…' : 'Run'}
-          </Button>
         </div>
       </div>
       {error && (

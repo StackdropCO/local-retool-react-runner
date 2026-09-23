@@ -64,6 +64,15 @@ describe('worktree targets', () => {
     expect(listWorktrees(main).every((worktree) => /^[0-9a-f]{40}$/.test(worktree.head))).toBe(true)
   })
 
+  it('keeps valid worktrees when a registered worktree is stale', () => {
+    const { main, feature } = repositoryWithFeatureWorktree()
+    rmSync(feature, { recursive: true, force: true })
+
+    expect(listWorktrees(main)).toEqual([
+      expect.objectContaining({ path: realpathSync(main), branch: 'main', dirty: false }),
+    ])
+  })
+
   it('validates the exact worktree without switching either branch', () => {
     const { main, feature } = repositoryWithFeatureWorktree()
 

@@ -4,12 +4,16 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    "./live-sql": "./src/liveSql.ts"
+    "./live-sql": "./src/liveSql.ts",
+    "./test-postgres": "./src/disposablePostgres.ts",
+    "./postgres-schema": "./src/postgresSchema.ts",
+    "./test-resources": "./src/testResources.ts"
   },
   "packageManager": "pnpm@11.5.0",
   "scripts": {
     "test": "vitest run",
     "test:live": "vitest run --config vitest.config.live.ts",
+    "schema:postgres": "tsx src/scripts/capturePostgresSchema.ts",
     "typecheck": "tsx src/typecheckCli.ts",
     "probe": "tsx src/scripts/probe.ts",
     "start": "tsx src/index.ts",
@@ -55,6 +59,7 @@
     "lucide-react": "^0.577.0",
     "lz4js": "^0.2.0",
     "open": "^10.1.0",
+    "pg": "^8.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-is": "^19.2.7",
@@ -75,6 +80,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.0",

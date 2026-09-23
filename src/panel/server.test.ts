@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildRunnerArgs, createPanelServer, panelViteCacheDir, runnerExitResponse, type PanelServer } from './server'
+import type { McpClient } from '../mcpClient'
 
 const temporaryDirectories: string[] = []
 const validSpec = `openapi: 3.0.3
@@ -35,6 +36,16 @@ function localResourcesFixture(): { directory: string; specPath: string } {
   return { directory, specPath }
 }
 
+function fakeMcp(groups: Array<{ id: number; name: string }> = []): McpClient {
+  return {
+    async executeResourceTs() { return true },
+    async getResourceBindings() { return [] },
+    async listResources() { return [] },
+    async listGroups() { return groups },
+    async close() {},
+  }
+}
+
 describe('panel server', () => {
   let panel: PanelServer | undefined
 
@@ -62,6 +73,53 @@ describe('panel server', () => {
       localResourceError: expect.any(String),
     }))
     expect(favicon.status).toBe(204)
+  })
+
+  it('persists a validated emulated current user', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'panel-current-user-'))
+    temporaryDirectories.push(directory)
+    const configFile = join(directory, 'config.json')
+    writeFileSync(configFile, JSON.stringify({ mcpUrl: 'https://example.retool.com/mcp' }))
+    panel = await createPanelServer(0, { configFile })
+    const currentUser = {
+      id: 42, email: 'operator@example.com', firstName: 'Op', lastName: 'Erator', fullName: 'Op Erator',
+      profilePhotoUrl: null, groups: [{ id: 7, name: 'Operators' }], metadata: { geo: 'gbr' },
+      sid: 'user_operator', externalIdentifier: null, locale: 'en',
+    }
+
+    const saved = await fetch(`${panel.url}/api/current-user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currentUser }),
+    })
+    expect(saved.status).toBe(200)
+    await expect(saved.json()).resolves.toEqual({ currentUser })
+    await expect(fetch(`${panel.url}/api/status`).then((response) => response.json()))
+      .resolves.toMatchObject({ currentUser })
+    expect(JSON.parse(readFileSync(configFile, 'utf8')).currentUser).toEqual(currentUser)
+
+    const invalid = await fetch(`${panel.url}/api/current-user`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ currentUser: { id: 'wrong', email: '', groups: [] } }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+
+  it('serves authoritative Retool groups from MCP for the user selector', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'panel-groups-'))
+    temporaryDirectories.push(directory)
+    const configFile = join(directory, 'config.json')
+    writeFileSync(configFile, JSON.stringify({ mcpUrl: 'https://example.retool.com/mcp' }))
+    const mcp = fakeMcp([{ id: 2, name: 'Viewers' }, { id: 1, name: 'Operators' }])
+    panel = await createPanelServer(0, { configFile, connectMcp: async () => mcp })
+
+    const response = await fetch(`${panel.url}/api/groups`)
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      groups: [{ id: 2, name: 'Viewers' }, { id: 1, name: 'Operators' }],
+    })
   })
 
   it('isolates live and test panel dependency caches', () => {

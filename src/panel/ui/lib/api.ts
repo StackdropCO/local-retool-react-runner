@@ -7,6 +7,8 @@ import type {
   RunInput,
   RunResult,
   ScannedApp,
+  CurrentUser,
+  RetoolGroup,
 } from './types'
 
 export type MissingRetoolResource = {
@@ -50,6 +52,8 @@ export interface PanelApi {
   status(): Promise<PanelStatus>
   saveMcpUrl(mcpUrl: string): Promise<{ mcpUrl: string; cachedAuth: boolean }>
   authorize(): Promise<{ connected: true; mcpUrl: string }>
+  groups(): Promise<{ groups: RetoolGroup[] }>
+  saveCurrentUser(currentUser: CurrentUser): Promise<{ currentUser: CurrentUser }>
   resources(): Promise<{ resources: Resource[] }>
   loadLocalResourceSpec(resourceId: string): Promise<LocalResourceSpec>
   saveLocalResourceSpec(resourceId: string, content: string): Promise<LocalResourceSpec>
@@ -64,6 +68,12 @@ export const createPanelApi = (): PanelApi => ({
   status: () => request<PanelStatus>('/api/status'),
   saveMcpUrl: (mcpUrl) => post('/api/mcp-url', { mcpUrl }),
   authorize: () => post('/api/auth'),
+  groups: () => request('/api/groups'),
+  saveCurrentUser: (currentUser) => request('/api/current-user', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ currentUser }),
+  }),
   resources: () => request('/api/resources'),
   loadLocalResourceSpec: (resourceId) => request(`/api/local-resources/${encodeURIComponent(resourceId)}/spec`),
   saveLocalResourceSpec: (resourceId, content) => request(`/api/local-resources/${encodeURIComponent(resourceId)}/spec`, {

@@ -7,3 +7,6 @@ config.json
 .local-resources/
 .DS_Store
 .worktrees/
+/outputs/
+/scripts/analyze_text_usage.py
+/scripts/build_text_usage_report.mjs

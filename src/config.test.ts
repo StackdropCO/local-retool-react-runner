@@ -14,4 +14,15 @@ describe('config', () => {
     writeConfig({ repoDir: '/repo' }, file)
     expect(readConfig(file)).toEqual({ mcpUrl: 'https://a/mcp', repoDir: '/repo' })
   })
+
+  it('persists the emulated current user without dropping other settings', () => {
+    const currentUser = {
+      id: 1, email: 'dev@example.com', firstName: 'Dev', lastName: 'User', fullName: 'Dev User',
+      profilePhotoUrl: null, groups: [{ id: 2, name: 'Viewers' }], metadata: { geo: 'gbr' },
+      sid: 'user_dev', externalIdentifier: null, locale: 'en',
+    }
+    writeConfig({ mcpUrl: 'https://a/mcp' }, file)
+    writeConfig({ currentUser }, file)
+    expect(readConfig(file)).toEqual({ mcpUrl: 'https://a/mcp', currentUser })
+  })
 })

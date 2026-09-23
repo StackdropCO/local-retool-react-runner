@@ -13,11 +13,13 @@ export function hasCachedAuth(url: string = MCP_URL): boolean {
 }
 
 export type ResourceBinding = { resource_id: string; variable_name: string; type: string; display_name?: string }
+export type RetoolGroup = { id: number; name: string }
 
 export type McpClient = {
   executeResourceTs(resourceNames: string[], code: string, environmentName?: string): Promise<unknown>
   getResourceBindings(resourceNames: string[]): Promise<ResourceBinding[]>
   listResources(nameContains?: string): Promise<Array<{ name: string; displayName?: string; type?: string }>>
+  listGroups(): Promise<RetoolGroup[]>
   close(): Promise<void>
 }
 
@@ -100,6 +102,24 @@ export async function connectMcp(url: string = MCP_URL): Promise<McpClient> {
         displayName: x.displayName ?? x.display_name,
         type: x.type ?? x.resource_type,
       }))
+    },
+    async listGroups() {
+      const groups: RetoolGroup[] = []
+      let nextToken: string | undefined
+      do {
+        const r: any = await call('retool_list_groups', {
+          limit: 100,
+          ...(nextToken ? { next_token: nextToken } : {}),
+        })
+        const page = Array.isArray(r) ? r : (r?.data ?? r?.groups ?? [])
+        for (const group of page) {
+          if (typeof group?.id === 'number' && typeof group?.name === 'string') {
+            groups.push({ id: group.id, name: group.name })
+          }
+        }
+        nextToken = r?.has_more && typeof r?.next_token === 'string' ? r.next_token : undefined
+      } while (nextToken)
+      return groups.sort((a, b) => a.name.localeCompare(b.name))
     },
     async close() {
       await client.close()

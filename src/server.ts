@@ -10,6 +10,7 @@ import { resolveResources, buildGlobals, validateLocalResourceBindings, type Res
 import type { McpClient } from './mcpClient.js'
 import { loadLocalResourceDefinitions, type LocalResourceMap } from './localResourceConfig.js'
 import type { RetoolEnvironment } from './environment.js'
+import { resolveCurrentUser, type CurrentUser } from './currentUser.js'
 
 // The app frontend lives outside the tool root, so Vite can't resolve its bare
 // npm imports (react, radix, lucide, ...) — those packages are installed in the
@@ -45,6 +46,13 @@ export function appViteCacheDir(port: number): string {
   return join(TOOL_ROOT, 'node_modules', '.vite', `app-${port}`)
 }
 
+export function appHmrPort(port: number): number {
+  const firstUnprivilegedPort = 1024
+  const unprivilegedPortCount = 65_536 - firstUnprivilegedPort
+  return firstUnprivilegedPort
+    + ((port - firstUnprivilegedPort + 3000 + unprivilegedPortCount) % unprivilegedPortCount)
+}
+
 export async function assertResourcesAvailableInEnvironment(
   mcp: McpClient,
   resources: ResourceMap,
@@ -65,7 +73,17 @@ export async function assertResourcesAvailableInEnvironment(
   }
 }
 
-export async function startServer(opts: { appDir: string; port: number; writes: boolean; environmentName: RetoolEnvironment; mcp: McpClient }) {
+export async function startServer(opts: {
+  appDir: string
+  port: number
+  writes: boolean
+  environmentName: RetoolEnvironment
+  mcp: McpClient
+  currentUser?: CurrentUser | (() => CurrentUser)
+}) {
+  const currentUser = () => resolveCurrentUser(
+    typeof opts.currentUser === 'function' ? opts.currentUser() : opts.currentUser,
+  )
   const endpoints = discoverEndpoints(opts.appDir)
   const refsByEndpoint = readEndpointResourceRefs(opts.appDir)
   const refs = readResourceRefs(opts.appDir)
@@ -84,6 +102,13 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
   const app = express()
   app.use(express.json({ limit: '10mb' }))
 
+  // Retool supplies this identity endpoint and its useCurrentUser hook in the
+  // hosted runtime. The local runner mirrors both without writing generated
+  // files into the selected app worktree.
+  app.get('/api/current-user', (_req, res) => {
+    res.json({ user: currentUser() })
+  })
+
   app.post('/rpc/:endpoint', async (req, res) => {
     const endpoint = req.params.endpoint
     const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
@@ -100,7 +125,7 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
       environmentName: opts.environmentName,
       localResources: endpointLocalResources,
     })
-    const runner = createRunner({ appDir: opts.appDir, globals })
+    const runner = createRunner({ appDir: opts.appDir, globals, user: currentUser() })
     try {
       const result = await runner.run(endpoint, req.body?.params ?? {})
       res.json({ result })
@@ -115,7 +140,7 @@ export async function startServer(opts: { appDir: string; port: number; writes: 
     appType: 'custom',
     // Unique HMR ws port per app so several runners can run at once (the panel
     // launches multiple). Derived from the app port to avoid collisions.
-    server: { middlewareMode: true, hmr: { port: opts.port + 3000 } },
+    server: { middlewareMode: true, hmr: { port: appHmrPort(opts.port) } },
     plugins: [react(), hooksVirtualPlugin({ appDir: opts.appDir, endpoints })],
     resolve: { alias: buildAppAliases(opts.appDir), dedupe: ['react', 'react-dom'] },
   })

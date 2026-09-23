@@ -8,6 +8,20 @@ import { PanelApp } from './PanelApp'
 import { PanelApiError, type PanelApi } from './lib/api'
 import type { ScannedApp } from './lib/types'
 
+const currentUser = {
+  id: 1,
+  email: 'dev@example.com',
+  firstName: 'Dev',
+  lastName: 'User',
+  fullName: 'Dev User',
+  profilePhotoUrl: null,
+  groups: [{ id: 10, name: 'Analytics viewers' }],
+  metadata: {},
+  sid: 'user_dev',
+  externalIdentifier: null,
+  locale: 'en',
+}
+
 const exampleApp = {
   name: 'Example App',
   group: 'Operations',
@@ -43,9 +57,12 @@ function fakeApi(): PanelApi {
       cachedAuth: true,
       connected: true,
       repoDir: '/repo',
+      currentUser,
     })),
     saveMcpUrl: vi.fn(async (mcpUrl: string) => ({ mcpUrl, cachedAuth: true })),
     authorize: vi.fn(async () => ({ connected: true as const, mcpUrl: 'https://example.retool.com/mcp' })),
+    groups: vi.fn(async () => ({ groups: [{ id: 10, name: 'Analytics viewers' }] })),
+    saveCurrentUser: vi.fn(async (user) => ({ currentUser: user })),
     resources: vi.fn(async () => ({ resources: [] })),
     loadLocalResourceSpec: vi.fn(async () => ({
       resourceId: 'resource-uuid',
@@ -74,13 +91,34 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('example.retool.com')).toBeInTheDocument()
-    expect(screen.getByText('connected · 0 apps running')).toBeInTheDocument()
+    expect(await screen.findByText('example.retool.com/mcp')).toBeInTheDocument()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(screen.getByText('0 running')).toBeInTheDocument()
     expect(api.status).toHaveBeenCalledOnce()
     expect(api.running).toHaveBeenCalledOnce()
   })
 
+  it('shows and updates the identity used by frontend and backend code', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByText('Dev User')).toBeInTheDocument()
+    expect(screen.getByText('Analytics viewers')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
+    expect(await screen.findByLabelText('Retool groups')).toBeInTheDocument()
+    await user.clear(screen.getByLabelText('Email'))
+    await user.type(screen.getByLabelText('Email'), 'other@example.com')
+    await user.click(screen.getByRole('button', { name: 'Save emulated user' }))
+
+    await waitFor(() => expect(api.saveCurrentUser).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'other@example.com' }),
+    ))
+  })
+
   it('shows private local API definitions without exposing their contents', async () => {
+    const user = userEvent.setup()
     const api = fakeApi()
     api.status = vi.fn(async () => ({
       mcpUrl: 'https://example.retool.com/mcp',
@@ -98,7 +136,8 @@ describe('PanelApp', () => {
 
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('Local API specs')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /^Local API specs/ }))
+    expect(await screen.findByRole('heading', { name: /Local API specs/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit privateUpload' })).toBeInTheDocument()
     expect(screen.getByText('upload.openapi.yaml · #1234567890ab')).toBeInTheDocument()
     expect(screen.queryByText(/files\.slack\.com/)).not.toBeInTheDocument()
@@ -129,6 +168,7 @@ describe('PanelApp', () => {
     }))
 
     render(<PanelApp api={api} />)
+    await user.click(screen.getByRole('tab', { name: /^Local API specs/ }))
     await user.click(await screen.findByRole('button', { name: 'Edit privateUpload' }))
 
     const editor = await screen.findByLabelText('OpenAPI document for privateUpload')
@@ -157,6 +197,7 @@ describe('PanelApp', () => {
     api.saveLocalResourceSpec = vi.fn(async () => { throw new Error('Unable to parse OpenAPI document') })
 
     render(<PanelApp api={api} />)
+    await user.click(screen.getByRole('tab', { name: /^Local API specs/ }))
     await user.click(await screen.findByRole('button', { name: 'Edit privateUpload' }))
     const editor = await screen.findByLabelText('OpenAPI document for privateUpload')
     await user.clear(editor)
@@ -180,6 +221,7 @@ describe('PanelApp', () => {
     }] }))
     render(<PanelApp api={api} />)
 
+    await user.click(screen.getByRole('tab', { name: /^Resources/ }))
     await user.click(await screen.findByRole('button', { name: 'Load' }))
 
     expect(await screen.findByText('local — upload.openapi.yaml · #1234567890ab')).toBeInTheDocument()
@@ -190,10 +232,12 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
     const repoInput = await screen.findByLabelText('Apps repository directory')
     await user.clear(repoInput)
     await user.type(repoInput, '/repo')
     await user.click(screen.getByRole('button', { name: 'Scan' }))
+    await user.click(screen.getByRole('tab', { name: /^Apps/ }))
     await user.selectOptions(await screen.findByLabelText('Worktree for Example App'), '/worktrees/feature')
     await user.click(screen.getByRole('button', { name: 'Run Example App' }))
 
@@ -221,8 +265,7 @@ describe('PanelApp', () => {
     })
     render(<PanelApp api={api} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Scan' }))
-    await user.click(screen.getByRole('button', { name: 'Run Example App' }))
+    await user.click(await screen.findByRole('button', { name: 'Run Example App' }))
 
     expect(await screen.findByText("Example App can't run in staging.")).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Slack' })).toHaveAttribute(
@@ -241,7 +284,6 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Scan' }))
     await user.selectOptions(
       await screen.findByLabelText('Environment for Example App'),
       'production',
@@ -266,10 +308,22 @@ describe('PanelApp', () => {
     api.scan = vi.fn(async () => ({ apps: [staleApp], repoDir: '/repo' }))
     render(<PanelApp api={api} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Scan' }))
-
     expect(await screen.findByRole('option', { name: 'no registered worktree' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run Example App' })).toBeDisabled()
+  })
+
+  it('rescans the saved repository from the Apps page', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await screen.findByRole('button', { name: 'Run Example App' })
+    expect(api.scan).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Rescan' }))
+
+    await waitFor(() => expect(api.scan).toHaveBeenCalledTimes(2))
+    expect(api.scan).toHaveBeenLastCalledWith('/repo')
   })
 
   it('requires confirmation before an app can run with writes', async () => {
@@ -277,8 +331,6 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    await screen.findByLabelText('Apps repository directory')
-    await user.click(screen.getByRole('button', { name: 'Scan' }))
     const writeSwitch = await screen.findByRole('switch', { name: 'Enable writes for Example App' })
     await user.click(writeSwitch)
 
@@ -292,14 +344,60 @@ describe('PanelApp', () => {
     expect(api.run).toHaveBeenCalledWith(expect.objectContaining({ writes: true }))
   })
 
+  it('filters apps by search, running state, and launches in this panel session', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    const otherApp: ScannedApp = {
+      ...exampleApp,
+      name: 'Other App',
+      path: '/repo/apps-v2/Operations/Other App',
+      worktrees: exampleApp.worktrees.map((worktree) => ({
+        ...worktree,
+        appPath: `${worktree.worktreePath}/apps-v2/Operations/Other App`,
+      })),
+    }
+    api.scan = vi.fn(async () => ({ apps: [exampleApp, otherApp], repoDir: '/repo' }))
+    api.running = vi.fn(async () => ({ apps: [{
+      name: 'Example App',
+      appPath: exampleApp.path,
+      worktreePath: '/worktrees/main',
+      branch: 'main',
+      head: '1111111111111111111111111111111111111111',
+      dirty: false,
+      port: 5174,
+      url: 'http://localhost:5174',
+      environment: 'staging' as const,
+      writes: false,
+    }] }))
+
+    render(<PanelApp api={api} />)
+
+    const filter = await screen.findByLabelText('Filter apps')
+    await user.type(filter, 'Other')
+    expect(screen.getByRole('button', { name: 'Run Other App' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Example App' })).not.toBeInTheDocument()
+
+    await user.clear(filter)
+    await user.click(screen.getByRole('button', { name: 'running' }))
+    expect(await screen.findByRole('button', { name: 'Run Example App' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Other App' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'all' }))
+    await user.click(await screen.findByRole('button', { name: 'Run Other App' }))
+    await user.click(screen.getByRole('button', { name: 'recent' }))
+    expect(await screen.findByRole('button', { name: 'Run Other App' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Example App' })).not.toBeInTheDocument()
+  })
+
   it('shows the exact worktree identity for a running preview', async () => {
+    const user = userEvent.setup()
     const api = fakeApi()
     api.running = vi.fn(async () => ({
       apps: [{
         name: 'Example App',
         appPath: '/worktrees/feature/apps-v2/Operations/Example App',
         worktreePath: '/worktrees/feature',
-        branch: 'feature',
+        branch: 'arsanymiladext/feature',
         head: '2222222222222222222222222222222222222222',
         dirty: true,
         port: 5174,
@@ -311,8 +409,12 @@ describe('PanelApp', () => {
 
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('feature · 2222222 · modified')).toBeInTheDocument()
-    expect(screen.getByText('staging · read-only')).toBeInTheDocument()
+    const branch = await screen.findByText('arsanymiladext/feature')
+    expect(screen.getByText('2222222 · modified')).toBeInTheDocument()
+    expect(screen.getByText('staging', { selector: 'div' })).toBeInTheDocument()
+    expect(screen.getByText('read only')).toBeInTheDocument()
     expect(screen.getByText('/worktrees/feature')).toBeInTheDocument()
+    await user.hover(branch)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('arsanymiladext/feature')
   })
 })

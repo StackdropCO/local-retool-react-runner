@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { listWorktrees } from './git.js'
 import { TOOL_ROOT } from './paths.js'
+import { currentUserDeclarationSource } from './currentUser.js'
 
 export type TypecheckTarget = {
   appDir: string
@@ -197,6 +198,11 @@ export function typecheckApp(inputDir: string): TypecheckResult {
   const dependencyOptions = { ...options, baseUrl: undefined, paths: undefined }
   const toolContainingFile = join(TOOL_ROOT, 'src', '__app-typecheck.ts')
   host.resolveModuleNames = (moduleNames, containingFile) => moduleNames.map((moduleName) => {
+    if (/(^|\/)hooks\/useCurrentUser$/.test(moduleName.replace(/\\/g, '/'))) {
+      const virtualFile = `${resolve(dirname(containingFile), moduleName)}.d.ts`
+      virtualSources.set(virtualFile, currentUserDeclarationSource())
+      return { resolvedFileName: virtualFile, extension: ts.Extension.Dts }
+    }
     if (/(^|\/)hooks\/backend\/[^/]+$/.test(moduleName.replace(/\\/g, '/'))) {
       const virtualFile = `${resolve(dirname(containingFile), moduleName)}.d.ts`
       const source = hookDeclarations(appDir, virtualFile)

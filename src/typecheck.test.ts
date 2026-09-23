@@ -28,11 +28,13 @@ function createApp(root: string, source: { backend?: string; frontend?: string }
   writeFileSync(join(app, 'frontend', 'App.tsx'), source.frontend ?? [
     "import { useState } from 'react'",
     "import { useLoad } from './hooks/backend/reports'",
+    "import { useCurrentUser } from './hooks/useCurrentUser'",
     'export default function App() {',
     '  const [count] = useState(0)',
     '  const query = useLoad()',
+    '  const { user } = useCurrentUser()',
     '  query.trigger({ limit: count + 1 })',
-    '  return null',
+    '  return user?.email ?? null',
     '}',
   ].join('\n'))
   return app

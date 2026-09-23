@@ -19,6 +19,15 @@ export type LiveSqlRunnerOptions = {
   requireCachedAuth?: boolean
   /** Dependency injection for runner tests and advanced callers. */
   mcp?: McpClient
+  /**
+   * Optional fail-fast proof that MCP reached the intended database. Prefer a
+   * dedicated metadata row; current_database() is a useful fallback.
+   */
+  environmentGate?: {
+    resource: string
+    sql: string
+    expected: Record<string, string | number | boolean | null>
+  }
 }
 
 function rowsFromResult<T extends SqlRow>(result: unknown): T[] {
@@ -69,20 +78,41 @@ export async function createLiveSqlRunner(options: LiveSqlRunnerOptions): Promis
     resolved.set(alias, { resourceId, binding })
   }
 
-  return {
-    async runSql<T extends SqlRow = SqlRow>(resource: string, sql: string, params?: unknown[]): Promise<T[]> {
-      const target = resolved.get(resource)
-      if (!target) throw new Error(`Unknown live SQL resource alias "${resource}"`)
-      if (isWrite(sql)) throw new Error(`Live SQL tests are read-only; refused: ${sql.slice(0, 120)}`)
-      if (params !== undefined && !Array.isArray(params)) throw new Error('SQL query parameters must be an array')
+  const runSql = async <T extends SqlRow = SqlRow>(resource: string, sql: string, params?: unknown[]): Promise<T[]> => {
+    const target = resolved.get(resource)
+    if (!target) throw new Error(`Unknown live SQL resource alias "${resource}"`)
+    if (isWrite(sql)) throw new Error(`Live SQL tests are read-only; refused: ${sql.slice(0, 120)}`)
+    if (params !== undefined && !Array.isArray(params)) throw new Error('SQL query parameters must be an array')
 
-      const result = await mcp.executeResourceTs(
-        [target.resourceId],
-        buildSqlSnippet(target.binding, sql, params),
-        options.environmentName,
+    const result = await mcp.executeResourceTs(
+      [target.resourceId],
+      buildSqlSnippet(target.binding, sql, params),
+      options.environmentName,
+    )
+    return rowsFromResult<T>(result)
+  }
+
+  if (options.environmentGate) {
+    try {
+      const rows = await runSql(options.environmentGate.resource, options.environmentGate.sql)
+      if (rows.length !== 1) {
+        throw new Error(`expected exactly one gate row, received ${rows.length}`)
+      }
+      const mismatches = Object.entries(options.environmentGate.expected)
+        .filter(([key, expected]) => !Object.is(rows[0][key], expected))
+        .map(([key, expected]) => `${key}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(rows[0][key])}`)
+      if (mismatches.length) throw new Error(mismatches.join('; '))
+    } catch (error) {
+      if (ownsMcp) await mcp.close()
+      throw new Error(
+        `Live SQL environment gate failed${options.environmentName ? ` for "${options.environmentName}"` : ''}: ` +
+        String((error as Error)?.message ?? error),
       )
-      return rowsFromResult<T>(result)
-    },
+    }
+  }
+
+  return {
+    runSql,
     async close() {
       if (ownsMcp) await mcp.close()
     },

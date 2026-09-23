@@ -7,6 +7,7 @@ import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
 import { repoRoot, validateWorktreeTarget } from './git.js'
 import { parseRetoolEnvironment } from './environment.js'
+import { resolveCurrentUser } from './currentUser.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -15,6 +16,7 @@ function arg(name: string, fallback?: string) {
 const has = (name: string) => process.argv.includes(`--${name}`)
 
 async function main() {
+  const config = readConfig()
   let appDir = arg('app', '')!
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
@@ -34,7 +36,7 @@ async function main() {
     process.exit(1)
   }
   // MCP URL is per-user: flag > saved config > env. No org default.
-  const mcpUrl = arg('mcp-url', readConfig().mcpUrl || MCP_URL)!
+  const mcpUrl = arg('mcp-url', config.mcpUrl || MCP_URL)!
   if (!mcpUrl) {
     console.error('[runner] no MCP URL. Pass --mcp-url "https://your-org.retool.com/mcp", set RETOOL_MCP_URL, or configure it in the panel (pnpm panel).')
     process.exit(1)
@@ -45,7 +47,16 @@ async function main() {
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
   ensureFrontendDeps(appDir)
   const mcp = await connectMcp(mcpUrl)
-  const { url } = await startServer({ appDir, port, writes, environmentName, mcp })
+  const { url } = await startServer({
+    appDir,
+    port,
+    writes,
+    environmentName,
+    mcp,
+    // Read on each request so changing the persona in the panel does not
+    // require restarting backend query execution.
+    currentUser: () => resolveCurrentUser(readConfig().currentUser),
+  })
   console.log(`[runner] serving ${url}`)
 }
 main().catch((e) => {

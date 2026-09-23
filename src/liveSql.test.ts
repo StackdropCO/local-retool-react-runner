@@ -51,4 +51,43 @@ describe('createLiveSqlRunner', () => {
     await expect(createLiveSqlRunner({ resources: { databricks: 'missing' }, mcp }))
       .rejects.toThrow(/did not return a binding/)
   })
+
+  it('fails before returning a runner when the database environment gate does not match', async () => {
+    const mcp = fakeMcp()
+    vi.mocked(mcp.executeResourceTs).mockResolvedValue({ data: [{ environment: 'production' }] })
+
+    await expect(createLiveSqlRunner({
+      resources: { databricks: 'db-uuid' },
+      environmentName: 'staging',
+      environmentGate: {
+        resource: 'databricks',
+        sql: 'SELECT environment FROM environment_metadata',
+        expected: { environment: 'staging' },
+      },
+      mcp,
+    })).rejects.toThrow(/environment gate failed for "staging".*expected "staging".*"production"/)
+  })
+
+  it('returns the runner only after the database environment gate matches', async () => {
+    const mcp = fakeMcp()
+    vi.mocked(mcp.executeResourceTs).mockResolvedValueOnce({ data: [{ database_name: 'analytics_staging' }] })
+
+    const live = await createLiveSqlRunner({
+      resources: { databricks: 'db-uuid' },
+      environmentName: 'staging',
+      environmentGate: {
+        resource: 'databricks',
+        sql: 'SELECT current_database() AS database_name',
+        expected: { database_name: 'analytics_staging' },
+      },
+      mcp,
+    })
+
+    expect(mcp.executeResourceTs).toHaveBeenCalledWith(
+      ['db-uuid'],
+      'return await databricks.query("SELECT current_database() AS database_name")',
+      'staging',
+    )
+    await live.close()
+  })
 })

@@ -79,10 +79,18 @@ export function listWorktrees(dir: string): WorktreeInfo[] {
   try {
     const root = repoRoot(dir)
     if (!root) return []
-    return parseWorktreeList(git(root, ['worktree', 'list', '--porcelain'])).map((worktree) => ({
-      ...worktree,
-      dirty: git(worktree.path, ['status', '--porcelain']).length > 0,
-    }))
+    return parseWorktreeList(git(root, ['worktree', 'list', '--porcelain']))
+      .filter((worktree) => existsSync(worktree.path))
+      .map((worktree) => {
+        let dirty = false
+        try {
+          dirty = git(worktree.path, ['status', '--porcelain']).length > 0
+        } catch {
+          // A worktree can disappear between listing and inspection. Keep the
+          // other valid entries instead of making the entire list unusable.
+        }
+        return { ...worktree, dirty }
+      })
   } catch {
     return []
   }

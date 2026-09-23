@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { PanelStatus } from '../lib/types'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Input } from './ui/input'
 
 type ConnectionCardProps = {
@@ -37,6 +37,7 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
     <Card>
       <CardHeader>
         <CardTitle>MCP endpoint</CardTitle>
+        <CardDescription>Connection used to discover resources and run local previews.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row">

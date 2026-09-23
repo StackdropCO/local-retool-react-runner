@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { appViteCacheDir, assertResourcesAvailableInEnvironment, discoverEndpoints } from './server.js'
+import { tmpdir } from 'node:os'
+import { createServer as createNetServer } from 'node:net'
+import { appHmrPort, appViteCacheDir, assertResourcesAvailableInEnvironment, discoverEndpoints, startServer } from './server.js'
 import type { McpClient } from './mcpClient.js'
 import type { ResourceMap } from './resourceGlobals.js'
 
 const APP = process.env.RETOOL_TEST_APP || ''
+
+const freePort = () => new Promise<number>((resolve, reject) => {
+  const server = createNetServer()
+  server.once('error', reject)
+  server.listen(0, '127.0.0.1', () => {
+    const address = server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    server.close(() => resolve(port))
+  })
+})
 
 describe.skipIf(!APP || !existsSync(join(APP, 'backend')))('discoverEndpoints (set RETOOL_TEST_APP to run)', () => {
   it('finds default-export endpoints and excludes non-endpoint helpers', () => {
@@ -47,6 +59,7 @@ function environmentCheckingMcp(): McpClient {
     },
     async getResourceBindings() { return [] },
     async listResources() { return [] },
+    async listGroups() { return [] },
     async close() {},
   }
 }
@@ -79,4 +92,47 @@ describe('Vite dependency cache isolation', () => {
     expect(appViteCacheDir(5175)).toMatch(/node_modules\/\.vite\/app-5175$/)
     expect(appViteCacheDir(5174)).not.toBe(appViteCacheDir(5175))
   })
+
+  it('keeps the derived HMR port valid for high ephemeral app ports', () => {
+    expect(appHmrPort(62_613)).toBeGreaterThanOrEqual(1024)
+    expect(appHmrPort(62_613)).toBeLessThan(65_536)
+    expect(appHmrPort(5174)).toBe(8174)
+  })
+})
+
+describe('current user emulation', () => {
+  it('serves the configured identity and passes the same user to backend endpoints', async () => {
+    const appDir = mkdtempSync(join(tmpdir(), 'local-mcp-current-user-'))
+    mkdirSync(join(appDir, 'frontend'), { recursive: true })
+    mkdirSync(join(appDir, 'backend'), { recursive: true })
+    writeFileSync(join(appDir, 'package.json'), JSON.stringify({ retool: { app: { resourceReferencesByFile: {} } } }))
+    writeFileSync(join(appDir, 'frontend', 'package.json'), JSON.stringify({ dependencies: {} }))
+    writeFileSync(join(appDir, 'frontend', 'App.tsx'), 'export default function App() { return null }')
+    writeFileSync(join(appDir, 'backend', 'whoAmI.ts'), 'export default async function whoAmI(req: any) { return req.user }')
+    const mcp = environmentCheckingMcp()
+    let user = { email: 'first@example.com' } as any
+    const server = await startServer({
+      appDir,
+      port: await freePort(),
+      writes: false,
+      environmentName: 'staging',
+      mcp,
+      currentUser: () => user,
+    })
+    try {
+      await expect(fetch(`${server.url}/api/current-user`).then((response) => response.json()))
+        .resolves.toMatchObject({ user: { email: 'first@example.com' } })
+      user = { email: 'second@example.com' }
+      await expect(fetch(`${server.url}/rpc/whoAmI`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ params: {} }),
+      }).then((response) => response.json())).resolves.toMatchObject({
+        result: { email: 'second@example.com' },
+      })
+    } finally {
+      await server.close()
+      rmSync(appDir, { recursive: true, force: true })
+    }
+  }, 15_000)
 })

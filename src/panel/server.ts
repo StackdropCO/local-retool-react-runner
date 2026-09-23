@@ -9,7 +9,7 @@ import react from '@vitejs/plugin-react'
 import express from 'express'
 import { createServer as createViteServer } from 'vite'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
-import { connectMcp, hasCachedAuth, type McpClient } from '../mcpClient.js'
+import { connectMcp as connectMcpDefault, hasCachedAuth, type McpClient } from '../mcpClient.js'
 import { scanApps } from '../scan.js'
 import { readConfig, writeConfig } from '../config.js'
 import { validateWorktreeTarget } from '../git.js'
@@ -18,6 +18,7 @@ import { readLocalResourceSpec, saveLocalResourceSpec } from '../localResourceSp
 import { parseRetoolEnvironment, type RetoolEnvironment } from '../environment.js'
 import { readResourceRefs } from '../endpointRunner.js'
 import type { ResourceRef } from '../resourceGlobals.js'
+import { parseCurrentUser, resolveCurrentUser } from '../currentUser.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
@@ -120,11 +121,16 @@ export type PanelServer = {
 
 export type PanelServerOptions = {
   localResourceDirectory?: string
+  configFile?: string
+  connectMcp?: (url: string) => Promise<McpClient>
 }
 
 export async function createPanelServer(port: number, options: PanelServerOptions = {}): Promise<PanelServer> {
   const instanceId = ++panelInstanceId
-  let mcpUrl = readConfig().mcpUrl || MCP_URL
+  const readPanelConfig = () => readConfig(options.configFile)
+  const writePanelConfig = (patch: Parameters<typeof writeConfig>[0]) => writeConfig(patch, options.configFile)
+  const connectMcp = options.connectMcp ?? connectMcpDefault
+  let mcpUrl = readPanelConfig().mcpUrl || MCP_URL
   let mcp: McpClient | null = null
   const running = new Map<number, Running>()
 
@@ -170,10 +176,31 @@ export async function createPanelServer(port: number, options: PanelServerOption
       mcpUrl,
       cachedAuth: hasCachedAuth(mcpUrl),
       connected: !!mcp,
-      repoDir: readConfig().repoDir || '',
+      repoDir: readPanelConfig().repoDir || '',
       localResources,
       localResourceError,
+      currentUser: resolveCurrentUser(readPanelConfig().currentUser),
     })
+  })
+
+  app.put('/api/current-user', (req, res) => {
+    try {
+      const currentUser = parseCurrentUser(req.body?.currentUser)
+      writePanelConfig({ currentUser })
+      res.json({ currentUser })
+    } catch (error) {
+      res.status(400).json({ error: String((error as Error)?.message ?? error) })
+    }
+  })
+
+  app.get('/api/groups', async (_req, res) => {
+    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
+    try {
+      if (!mcp) mcp = await connectMcp(mcpUrl)
+      res.json({ groups: await mcp.listGroups() })
+    } catch (error) {
+      res.status(400).json({ error: String((error as Error)?.message ?? error) })
+    }
   })
 
   const localSpecError = (res: express.Response, error: unknown) => {
@@ -214,7 +241,7 @@ export async function createPanelServer(port: number, options: PanelServerOption
       mcp = null
     }
     mcpUrl = next
-    writeConfig({ mcpUrl })
+    writePanelConfig({ mcpUrl })
     res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl) })
   })
 
@@ -289,7 +316,7 @@ export async function createPanelServer(port: number, options: PanelServerOption
     }
     try {
       const apps = scanApps(repoDir)
-      writeConfig({ repoDir }) // remember the last good repo dir
+      writePanelConfig({ repoDir }) // remember the last good repo dir
       res.json({ apps, repoDir })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
