@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createLiveSqlRunner } from './liveSql.js'
+import { createCliSqlRunner, createLiveSqlRunner } from './liveSql.js'
 import type { McpClient } from './mcpClient.js'
 
 function fakeMcp(): McpClient {
@@ -89,5 +89,58 @@ describe('createLiveSqlRunner', () => {
       'staging',
     )
     await live.close()
+  })
+})
+
+describe('createCliSqlRunner', () => {
+  it('runs read-only SQL through the generated CLI resource binding', async () => {
+    const explore = vi.fn().mockResolvedValue({ ran: true, data: { data: [{ total: 42 }] } })
+    const live = await createCliSqlRunner({
+      resources: { warehouse: 'databricks' },
+      checkoutDir: '/cli-checkout',
+      environmentName: 'staging',
+      explore,
+    })
+
+    await expect(live.runSql('warehouse', 'SELECT 42 AS total')).resolves.toEqual([{ total: 42 }])
+    expect(explore).toHaveBeenCalledWith('return await databricks.query("SELECT 42 AS total")', {
+      checkoutDir: '/cli-checkout',
+      environmentName: 'staging',
+      rows: 5000,
+      allowMutative: false,
+    })
+  })
+
+  it('requires an explicit environment and refuses writes before invoking the CLI', async () => {
+    await expect(createCliSqlRunner({
+      resources: { warehouse: 'databricks' }, checkoutDir: '/cli-checkout', environmentName: '',
+    })).rejects.toThrow(/explicit Retool environment/i)
+
+    const explore = vi.fn()
+    const live = await createCliSqlRunner({
+      resources: { warehouse: 'databricks' },
+      checkoutDir: '/cli-checkout',
+      environmentName: 'staging',
+      explore,
+    })
+    await expect(live.runSql('warehouse', 'DELETE FROM metrics')).rejects.toThrow(/read-only/i)
+    expect(explore).not.toHaveBeenCalled()
+  })
+
+  it('applies the same database-backed environment gate', async () => {
+    const explore = vi.fn().mockResolvedValue({
+      ran: true, data: { data: [{ environment: 'production' }] },
+    })
+    await expect(createCliSqlRunner({
+      resources: { warehouse: 'databricks' },
+      checkoutDir: '/cli-checkout',
+      environmentName: 'staging',
+      environmentGate: {
+        resource: 'warehouse',
+        sql: 'SELECT environment FROM environment_metadata',
+        expected: { environment: 'staging' },
+      },
+      explore,
+    })).rejects.toThrow(/environment gate failed for "staging".*production/i)
   })
 })

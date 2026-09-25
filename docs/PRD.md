@@ -1,4 +1,4 @@
-# PRD — Local MCP Runner
+# PRD — Retool React Local Runner
 
 | | |
 |---|---|

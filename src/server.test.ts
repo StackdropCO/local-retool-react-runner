@@ -84,6 +84,16 @@ describe('Retool environment startup validation', () => {
       'staging',
     )).resolves.toBeUndefined()
   })
+
+  it('does not ask MCP to resolve resources assigned to Retool CLI explore', async () => {
+    const mcp = environmentCheckingMcp()
+    await expect(assertResourcesAvailableInEnvironment(
+      mcp,
+      { localUploadId: { ...resources.localUploadId, transport: 'explore' } },
+      {},
+      'staging',
+    )).resolves.toBeUndefined()
+  })
 })
 
 describe('Vite dependency cache isolation', () => {

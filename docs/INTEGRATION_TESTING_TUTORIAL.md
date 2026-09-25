@@ -6,15 +6,14 @@ writing to staging or production.
 The finished test setup uses:
 
 - a fresh PostgreSQL container for real transactional database behavior;
-- a reviewed schema-only fixture captured through Retool MCP;
+- a reviewed schema-only fixture captured through Retool;
 - small, synthetic seed files owned by the test;
 - strict mocks for Databricks and external APIs;
 - the app's real checked-in backend endpoint code; and
 - ordinary Vitest assertions.
 
-MCP is used only for explicitly requested live reads such as refreshing a
-schema fixture. Ordinary integration tests do not connect to MCP and do not
-select a Retool environment.
+Retool CLI is used only for explicitly requested live reads. Ordinary
+integration tests do not connect to Retool and do not select an environment.
 
 ## 1. Understand the three test lanes
 
@@ -24,10 +23,10 @@ Keep these as separate commands and separate files:
 | --- | --- | --- |
 | Unit | All mocked or pure functions | Fast default tests and PR checks |
 | Local integration | Disposable Postgres plus strict mocks | SQL behavior and complete backend endpoints |
-| Live checks | Real resources through MCP, read-only and gated | Validate assumptions against changing live data |
+| Live checks | Real resources through Retool CLI, read-only and gated | Validate assumptions against changing live data |
 
 The default `pnpm test` command should stay in the unit lane. Docker integration
-tests and live MCP checks should always be opt-in.
+tests and live Retool checks should always be opt-in.
 
 ## 2. Prerequisites
 
@@ -36,7 +35,7 @@ You need:
 - Docker Desktop or another working Docker engine;
 - Node.js and pnpm;
 - this `local-mcp-runner` package available to the app workspace; and
-- cached MCP authorization only when capturing a schema or running a live check.
+- a `retool clone` checkout and `retool auth login` only when running a live check.
 
 If the app is in another local repository, add this project as a development
 dependency using your workspace configuration or a local `link:` dependency.
@@ -96,20 +95,21 @@ Run schema capture explicitly against the intended Retool environment:
 
 ```sh
 pnpm schema:postgres -- \
-  --resource 11111111-1111-1111-1111-111111111111 \
+  --binding lakebaseRetoolOltp \
+  --checkout /absolute/path/to/retool-checkout \
   --environment staging \
   --out tests/fixtures/postgres-schema.sql
 ```
 
 The command:
 
-1. requires cached MCP authorization;
+1. requires Retool CLI authorization and a CLI checkout;
 2. sends the selected environment name to Retool;
 3. performs read-only PostgreSQL catalog queries;
 4. does not select application rows; and
 5. refuses to overwrite an existing fixture unless `--force` is passed.
 
-Review the resulting SQL before committing it. MCP capture supports schemas,
+Review the resulting SQL before committing it. CLI capture supports schemas,
 enums, sequences, tables, constraints, standalone indexes, and views. If the
 database relies on extensions, functions, triggers, row-level security,
 policies, or grants, use a reviewed schema-only `pg_dump` instead:
@@ -371,12 +371,13 @@ Nested paths are supported, and unexpected paths or arguments fail.
 
 ## 11. Gate the separate live-test lane
 
-Local integration tests need no environment gate because they have no MCP
+Local integration tests need no environment gate because they have no Retool
 connection. Live tests must verify the actual database identity before running:
 
 ```ts
-const live = await createLiveSqlRunner({
-  resources: { postgres: process.env.LIVE_SQL_RESOURCE_ID! },
+const live = await createCliSqlRunner({
+  resources: { postgres: 'lakebaseRetoolOltp' },
+  checkoutDir: process.env.RETOOL_CLI_CHECKOUT!,
   environmentName: 'staging',
   environmentGate: {
     resource: 'postgres',

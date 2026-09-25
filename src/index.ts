@@ -1,8 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { MCP_URL } from './paths.js'
 import { readConfig } from './config.js'
-import { connectMcp } from './mcpClient.js'
+import { connectRetoolCli } from './cliClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
 import { repoRoot, validateWorktreeTarget } from './git.js'
@@ -22,6 +21,7 @@ async function main() {
   const writes = has('writes')
   const environmentName = parseRetoolEnvironment(arg('environment', 'staging'))
   const branch = arg('branch', '')!
+  const exploreCheckoutDir = arg('explore-checkout', config.exploreCheckoutDir || '')!
   if (branch && appDir) {
     const worktreePath = repoRoot(appDir)
     if (!worktreePath) throw new Error(`app is not inside a Git worktree: ${appDir}`)
@@ -35,24 +35,24 @@ async function main() {
     )
     process.exit(1)
   }
-  // MCP URL is per-user: flag > saved config > env. No org default.
-  const mcpUrl = arg('mcp-url', config.mcpUrl || MCP_URL)!
-  if (!mcpUrl) {
-    console.error('[runner] no MCP URL. Pass --mcp-url "https://your-org.retool.com/mcp", set RETOOL_MCP_URL, or configure it in the panel (pnpm panel).')
+  if (!exploreCheckoutDir) {
+    console.error('[runner] no Retool CLI checkout. Pass --explore-checkout "/abs/path/to/retool-clone" or configure exploreCheckoutDir.')
     process.exit(1)
   }
   console.log(`[runner] app=${appDir}`)
-  console.log(`[runner] mcp=${mcpUrl}`)
+  console.log('[runner] transport=retool-cli (MCP disabled)')
   console.log(`[runner] environment=${environmentName}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
+  if (exploreCheckoutDir) console.log(`[runner] retool-explore=${exploreCheckoutDir}`)
   ensureFrontendDeps(appDir)
-  const mcp = await connectMcp(mcpUrl)
+  const mcp = await connectRetoolCli(exploreCheckoutDir, { allowMutative: writes })
   const { url } = await startServer({
     appDir,
     port,
     writes,
     environmentName,
     mcp,
+    exploreCheckoutDir,
     // Read on each request so changing the persona in the panel does not
     // require restarting backend query execution.
     currentUser: () => resolveCurrentUser(readConfig().currentUser),

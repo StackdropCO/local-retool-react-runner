@@ -86,6 +86,19 @@ describe('createLocalRestResource', () => {
     })
   })
 
+  it('supports the hosted rawRequest name and paths without a leading slash', async () => {
+    const { origin } = await listen((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ ok: true }))
+    })
+    const resource = createLocalRestResource(definition(origin), { writes: false, endpoint: 'read' })
+
+    await expect(resource.rawRequest({ method: 'GET', path: 'result/json' })).resolves.toMatchObject({
+      status: 200,
+      data: { ok: true },
+    })
+  })
+
   it('blocks mutating methods in read-only mode before opening a connection', async () => {
     let requests = 0
     const { origin } = await listen((_request, response) => {

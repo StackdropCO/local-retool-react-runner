@@ -1,4 +1,4 @@
-# Local MCP Runner — Team Guide
+# Retool React Local Runner — Team Guide
 
 Run Retool **apps-as-code** (React SDK apps) on your laptop, wired to **real** Retool
 resources through the Retool **MCP** — no changes to the app, nothing written to your

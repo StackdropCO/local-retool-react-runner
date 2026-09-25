@@ -5,7 +5,13 @@ import type { CurrentUser } from './currentUser.js'
 
 // Small persisted config (git-ignored) so the MCP URL and last-used repo dir
 // survive restarts and page reloads. Tokens live separately under .mcp-auth/.
-export type Config = { mcpUrl?: string; repoDir?: string; currentUser?: CurrentUser }
+export type Config = {
+  mcpUrl?: string
+  repoDir?: string
+  currentUser?: CurrentUser
+  /** A `retool clone` checkout used by `retool resource explore`. */
+  exploreCheckoutDir?: string
+}
 
 const FILE = join(TOOL_ROOT, 'config.json')
 

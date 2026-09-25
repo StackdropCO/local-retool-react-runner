@@ -9,7 +9,7 @@ import react from '@vitejs/plugin-react'
 import express from 'express'
 import { createServer as createViteServer } from 'vite'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
-import { connectMcp as connectMcpDefault, hasCachedAuth, type McpClient } from '../mcpClient.js'
+import { connectRetoolCli } from '../cliClient.js'
 import { scanApps } from '../scan.js'
 import { readConfig, writeConfig } from '../config.js'
 import { validateWorktreeTarget } from '../git.js'
@@ -59,17 +59,17 @@ type Running = {
 export function buildRunnerArgs(input: {
   appPath: string
   port: number
-  mcpUrl: string
   environment: RetoolEnvironment
   writes: boolean
+  exploreCheckoutDir?: string
 }): string[] {
   const args = [
     'src/dev.ts',
     '--app', input.appPath,
     '--port', String(input.port),
-    '--mcp-url', input.mcpUrl,
     '--environment', input.environment,
   ]
+  if (input.exploreCheckoutDir) args.push('--explore-checkout', input.exploreCheckoutDir)
   if (input.writes) args.push('--writes')
   return args
 }
@@ -122,16 +122,13 @@ export type PanelServer = {
 export type PanelServerOptions = {
   localResourceDirectory?: string
   configFile?: string
-  connectMcp?: (url: string) => Promise<McpClient>
 }
 
 export async function createPanelServer(port: number, options: PanelServerOptions = {}): Promise<PanelServer> {
   const instanceId = ++panelInstanceId
   const readPanelConfig = () => readConfig(options.configFile)
   const writePanelConfig = (patch: Parameters<typeof writeConfig>[0]) => writeConfig(patch, options.configFile)
-  const connectMcp = options.connectMcp ?? connectMcpDefault
-  let mcpUrl = readPanelConfig().mcpUrl || MCP_URL
-  let mcp: McpClient | null = null
+  const mcpUrl = readPanelConfig().mcpUrl || MCP_URL
   const running = new Map<number, Running>()
 
   const app = express()
@@ -174,9 +171,11 @@ export async function createPanelServer(port: number, options: PanelServerOption
     const { localResources, localResourceError } = localResourceStatus()
     res.json({
       mcpUrl,
-      cachedAuth: hasCachedAuth(mcpUrl),
-      connected: !!mcp,
+      cachedAuth: false,
+      connected: false,
+      runtimeTransport: 'retool-cli',
       repoDir: readPanelConfig().repoDir || '',
+      exploreCheckoutDir: readPanelConfig().exploreCheckoutDir || '',
       localResources,
       localResourceError,
       currentUser: resolveCurrentUser(readPanelConfig().currentUser),
@@ -194,13 +193,7 @@ export async function createPanelServer(port: number, options: PanelServerOption
   })
 
   app.get('/api/groups', async (_req, res) => {
-    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
-    try {
-      if (!mcp) mcp = await connectMcp(mcpUrl)
-      res.json({ groups: await mcp.listGroups() })
-    } catch (error) {
-      res.status(400).json({ error: String((error as Error)?.message ?? error) })
-    }
+    res.json({ groups: resolveCurrentUser(readPanelConfig().currentUser).groups })
   })
 
   const localSpecError = (res: express.Response, error: unknown) => {
@@ -230,37 +223,20 @@ export async function createPanelServer(port: number, options: PanelServerOption
 
   // Set the MCP URL (does not connect). Clears any existing connection.
   app.post('/api/mcp-url', async (req, res) => {
-    const next = String(req.body?.mcpUrl || '').trim()
-    try {
-      new URL(next)
-    } catch {
-      return res.status(400).json({ error: 'invalid URL' })
-    }
-    if (mcp) {
-      await mcp.close().catch(() => {})
-      mcp = null
-    }
-    mcpUrl = next
-    writePanelConfig({ mcpUrl })
-    res.json({ mcpUrl, cachedAuth: hasCachedAuth(mcpUrl) })
+    void req
+    res.status(410).json({ error: 'MCP is disabled; previews use Retool CLI only.' })
   })
 
   // Connect + OAuth. Opens a browser on first auth; uses cached tokens otherwise.
   app.post('/api/auth', async (_req, res) => {
-    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
-    try {
-      if (!mcp) mcp = await connectMcp(mcpUrl)
-      res.json({ connected: true, mcpUrl })
-    } catch (e: any) {
-      res.status(400).json({ error: String(e?.message ?? e) })
-    }
+    res.status(410).json({ error: 'MCP is disabled; use `retool auth login` for CLI authentication.' })
   })
 
   app.get('/api/resources', async (_req, res) => {
-    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first, then Save URL.' })
     try {
-      if (!mcp) mcp = await connectMcp(mcpUrl)
-      const list = await mcp.listResources()
+      const checkoutDir = readPanelConfig().exploreCheckoutDir || ''
+      const cli = await connectRetoolCli(checkoutDir)
+      const list = await cli.listResources()
       const local = localResourceStatus()
       if (local.localResourceError) throw new Error(local.localResourceError)
       const resources = list
@@ -352,7 +328,8 @@ export async function createPanelServer(port: number, options: PanelServerOption
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
     if (!worktreePath) return res.status(400).json({ error: 'worktreePath required' })
-    if (!mcpUrl) return res.status(400).json({ error: 'Set the MCP URL first (section 1), then Save URL.' })
+    const exploreCheckoutDir = readPanelConfig().exploreCheckoutDir
+    if (!exploreCheckoutDir) return res.status(400).json({ error: 'Configure a Retool CLI checkout before running an app.' })
     // Attach to the exact worktree selected by the user/agent. Never switch or
     // create branches from the panel: stale selections fail closed.
     let worktree
@@ -374,7 +351,13 @@ export async function createPanelServer(port: number, options: PanelServerOption
     }
     const p = await nextPort()
     // Launch in watch mode (dev.ts) so backend/query edits auto-reload the app.
-    const args = buildRunnerArgs({ appPath, port: p, mcpUrl, environment, writes })
+    const args = buildRunnerArgs({
+      appPath,
+      port: p,
+      environment,
+      writes,
+      exploreCheckoutDir,
+    })
     const child = spawn(tsxBin, args, { cwd: TOOL_ROOT, env: process.env })
     const url = `http://localhost:${p}`
     let settled = false
@@ -442,7 +425,6 @@ export async function createPanelServer(port: number, options: PanelServerOption
   const close = async () => {
     for (const r of running.values()) r.child.kill('SIGTERM')
     running.clear()
-    if (mcp) await mcp.close().catch(() => {})
     await vite.close()
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()))

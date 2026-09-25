@@ -16,6 +16,8 @@ export type ResourceBinding = { resource_id: string; variable_name: string; type
 export type RetoolGroup = { id: number; name: string }
 
 export type McpClient = {
+  /** CLI validates the selected environment on every real call instead. */
+  skipEnvironmentPreflight?: boolean
   executeResourceTs(resourceNames: string[], code: string, environmentName?: string): Promise<unknown>
   getResourceBindings(resourceNames: string[]): Promise<ResourceBinding[]>
   listResources(nameContains?: string): Promise<Array<{ name: string; displayName?: string; type?: string }>>

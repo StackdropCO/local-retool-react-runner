@@ -1,18 +1,17 @@
-const WRITE_RE = /^(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|REPLACE|UPSERT|GRANT|REVOKE)\b/i
+const WRITE_RE = /\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|REPLACE|UPSERT|GRANT|REVOKE)\b/i
 
-function stripLeading(sql: string): string {
-  let s = sql
-  for (;;) {
-    const before = s
-    s = s.replace(/^\s+/, '')
-    s = s.replace(/^--[^\n]*\n?/, '')
-    s = s.replace(/^\/\*[\s\S]*?\*\//, '')
-    if (s === before) return s
-  }
+function executableSql(sql: string): string {
+  return sql
+    .replace(/(\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$)[\s\S]*?\1/g, ' ')
+    .replace(/'(?:''|[^'])*'/g, ' ')
+    .replace(/"(?:""|[^"])*"/g, ' ')
+    .replace(/`(?:``|[^`])*`/g, ' ')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
 }
 
 export function isWrite(sql: string): boolean {
-  return WRITE_RE.test(stripLeading(sql))
+  return WRITE_RE.test(executableSql(sql))
 }
 
 export function buildSqlSnippet(binding: string, sql: string, params?: unknown[]): string {

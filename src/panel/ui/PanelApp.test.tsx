@@ -56,6 +56,8 @@ function fakeApi(): PanelApi {
       mcpUrl: 'https://example.retool.com/mcp',
       cachedAuth: true,
       connected: true,
+      runtimeTransport: 'retool-cli' as const,
+      exploreCheckoutDir: '/retool/checkout',
       repoDir: '/repo',
       currentUser,
     })),
@@ -87,12 +89,12 @@ function fakeApi(): PanelApi {
 }
 
 describe('PanelApp', () => {
-  it('shows connection and running status loaded on startup', async () => {
+  it('shows CLI and running status loaded on startup', async () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('example.retool.com/mcp')).toBeInTheDocument()
-    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(await screen.findByText('/retool/checkout')).toBeInTheDocument()
+    expect(screen.getByText('CLI ready')).toBeInTheDocument()
     expect(screen.getByText('0 running')).toBeInTheDocument()
     expect(api.status).toHaveBeenCalledOnce()
     expect(api.running).toHaveBeenCalledOnce()

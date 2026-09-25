@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildRunnerArgs, createPanelServer, panelViteCacheDir, runnerExitResponse, type PanelServer } from './server'
-import type { McpClient } from '../mcpClient'
 
 const temporaryDirectories: string[] = []
 const validSpec = `openapi: 3.0.3
@@ -34,16 +33,6 @@ function localResourcesFixture(): { directory: string; specPath: string } {
   const specPath = join(directory, 'upload.openapi.yaml')
   writeFileSync(specPath, validSpec)
   return { directory, specPath }
-}
-
-function fakeMcp(groups: Array<{ id: number; name: string }> = []): McpClient {
-  return {
-    async executeResourceTs() { return true },
-    async getResourceBindings() { return [] },
-    async listResources() { return [] },
-    async listGroups() { return groups },
-    async close() {},
-  }
 }
 
 describe('panel server', () => {
@@ -106,19 +95,18 @@ describe('panel server', () => {
     expect(invalid.status).toBe(400)
   })
 
-  it('serves authoritative Retool groups from MCP for the user selector', async () => {
+  it('serves the locally configured emulated groups without MCP', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'panel-groups-'))
     temporaryDirectories.push(directory)
     const configFile = join(directory, 'config.json')
     writeFileSync(configFile, JSON.stringify({ mcpUrl: 'https://example.retool.com/mcp' }))
-    const mcp = fakeMcp([{ id: 2, name: 'Viewers' }, { id: 1, name: 'Operators' }])
-    panel = await createPanelServer(0, { configFile, connectMcp: async () => mcp })
+    panel = await createPanelServer(0, { configFile })
 
     const response = await fetch(`${panel.url}/api/groups`)
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      groups: [{ id: 2, name: 'Viewers' }, { id: 1, name: 'Operators' }],
+      groups: [],
     })
   })
 
@@ -160,13 +148,29 @@ describe('panel server', () => {
     expect(buildRunnerArgs({
       appPath: '/repo/apps-v2/Group/App',
       port: 5174,
-      mcpUrl: 'https://example.retool.com/mcp',
       environment: 'staging',
       writes: false,
     })).toEqual([
       'src/dev.ts', '--app', '/repo/apps-v2/Group/App', '--port', '5174',
-      '--mcp-url', 'https://example.retool.com/mcp', '--environment', 'staging',
+      '--environment', 'staging',
     ])
+  })
+
+  it('passes the configured Retool CLI checkout to the child runner', () => {
+    expect(buildRunnerArgs({
+      appPath: '/repo/apps-v2/Group/App',
+      port: 5174,
+      environment: 'staging',
+      writes: false,
+      exploreCheckoutDir: '/retool/checkout',
+    })).toContainEqual('--explore-checkout')
+    expect(buildRunnerArgs({
+      appPath: '/repo/apps-v2/Group/App',
+      port: 5174,
+      environment: 'staging',
+      writes: false,
+      exploreCheckoutDir: '/retool/checkout',
+    })).toContainEqual('/retool/checkout')
   })
 
   it('returns linked resource names instead of UUID-heavy environment errors', () => {

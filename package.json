@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./live-sql": "./src/liveSql.ts",
+    "./retool-explore": "./src/retoolExplore.ts",
     "./test-postgres": "./src/disposablePostgres.ts",
     "./postgres-schema": "./src/postgresSchema.ts",
     "./test-resources": "./src/testResources.ts"

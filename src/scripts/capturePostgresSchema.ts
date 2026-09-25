@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { createLiveSqlRunner } from '../liveSql.js'
+import { createCliSqlRunner } from '../liveSql.js'
 import { capturePostgresSchema } from '../postgresSchema.js'
 
 function argument(name: string): string | undefined {
@@ -8,14 +8,15 @@ function argument(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined
 }
 
-const resourceId = argument('resource')
+const resourceBinding = argument('binding')
+const checkoutDir = argument('checkout')
 const outputArg = argument('out')
 const environmentName = argument('environment')
 const schemas = (argument('schemas') ?? 'public').split(',').map((value) => value.trim()).filter(Boolean)
 const force = process.argv.includes('--force')
 
-if (!resourceId || !outputArg || !environmentName) {
-  console.error('Usage: pnpm schema:postgres -- --resource <Retool UUID> --environment <name> --out <schema.sql> [--schemas public,app] [--force]')
+if (!resourceBinding || !outputArg || !environmentName) {
+  console.error('Usage: pnpm schema:postgres -- --binding <Retool binding> --environment <name> --out <schema.sql> [--checkout <Retool CLI checkout>] [--schemas public,app] [--force]')
   process.exitCode = 1
 } else {
   const outputPath = resolve(outputArg)
@@ -23,8 +24,9 @@ if (!resourceId || !outputArg || !environmentName) {
     console.error(`Refusing to overwrite ${outputPath}; pass --force to replace it.`)
     process.exitCode = 1
   } else {
-    const live = await createLiveSqlRunner({
-      resources: { postgres: resourceId },
+    const live = await createCliSqlRunner({
+      resources: { postgres: resourceBinding },
+      checkoutDir,
       environmentName,
     })
     try {

@@ -53,61 +53,71 @@ async function responseData(response: Response): Promise<unknown> {
 export function createLocalRestResource(
   definition: LocalResourceDefinition,
   options: { writes: boolean; endpoint: string; fetchImpl?: typeof fetch },
-): { query(request: LocalRestRequest): Promise<LocalRestResponse> } {
+): {
+  query(request: LocalRestRequest): Promise<LocalRestResponse>
+  rawRequest(request: LocalRestRequest): Promise<LocalRestResponse>
+} {
   const fetchImpl = options.fetchImpl ?? fetch
-  return {
-    async query(request) {
-      const method = String(request?.method ?? 'GET').toUpperCase()
-      const operation = safeOperation(definition, method, String(request?.path ?? ''))
-      if (!options.writes && !READ_METHODS.has(method)) {
-        throw new Error(`Write blocked (read-only mode). Local REST method: ${method}`)
+  const execute = async (request: LocalRestRequest): Promise<LocalRestResponse> => {
+    const method = String(request?.method ?? 'GET').toUpperCase()
+    const rawPath = String(request?.path ?? '')
+    if (rawPath.startsWith('//') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(rawPath)) {
+      // Keep absolute and protocol-relative inputs on the strict validation
+      // path; never turn them into superficially relative `/https:...` URLs.
+      safeOperation(definition, method, rawPath)
+    }
+    const path = rawPath.startsWith('/') ? rawPath : `/${rawPath}`
+    const normalizedRequest = { ...request, path }
+    const operation = safeOperation(definition, method, path)
+    if (!options.writes && !READ_METHODS.has(method)) {
+      throw new Error(`Write blocked (read-only mode). Local REST method: ${method}`)
+    }
+    const headers = requestHeaders(operation, normalizedRequest)
+    const url = new URL(path, definition.baseUrl)
+    const started = Date.now()
+    const ts = new Date(started).toISOString()
+    const code = `LOCAL REST ${operation.method} ${operation.template}`
+    try {
+      const response = await fetchImpl(url, {
+        method,
+        headers,
+        body: request.body as BodyInit | null | undefined,
+        redirect: 'manual',
+      })
+      if (response.status >= 300 && response.status < 400) {
+        throw new Error(`Redirect refused for local REST resource ${definition.binding}`)
       }
-      const headers = requestHeaders(operation, request)
-      const url = new URL(request.path, definition.baseUrl)
-      const started = Date.now()
-      const ts = new Date(started).toISOString()
-      const code = `LOCAL REST ${operation.method} ${operation.template}`
-      try {
-        const response = await fetchImpl(url, {
-          method,
-          headers,
-          body: request.body as BodyInit | null | undefined,
-          redirect: 'manual',
-        })
-        if (response.status >= 300 && response.status < 400) {
-          throw new Error(`Redirect refused for local REST resource ${definition.binding}`)
-        }
-        const result = {
-          status: response.status,
-          headers: Object.fromEntries(response.headers.entries()),
-          data: await responseData(response),
-        }
-        logQuery({
-          ts,
-          endpoint: options.endpoint,
-          resourceNames: [definition.resourceId],
-          code,
-          ok: response.ok,
-          error: response.ok ? undefined : `HTTP ${response.status}`,
-          durationMs: Date.now() - started,
-        })
-        return result
-      } catch (error) {
-        const message = String((error as Error)?.message ?? error)
-        const safeMessage = message.startsWith('Redirect refused')
-          ? message
-          : `Local REST request failed for ${definition.binding}`
-        logQuery({
-          ts,
-          endpoint: options.endpoint,
-          resourceNames: [definition.resourceId],
-          code,
-          ok: false,
-          error: safeMessage,
-          durationMs: Date.now() - started,
-        })
-        throw new Error(safeMessage)
+      const result = {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        data: await responseData(response),
       }
-    },
+      logQuery({
+        ts,
+        endpoint: options.endpoint,
+        resourceNames: [definition.resourceId],
+        code,
+        ok: response.ok,
+        error: response.ok ? undefined : `HTTP ${response.status}`,
+        durationMs: Date.now() - started,
+      })
+      return result
+    } catch (error) {
+      const message = String((error as Error)?.message ?? error)
+      const safeMessage = message.startsWith('Redirect refused')
+        ? message
+        : `Local REST request failed for ${definition.binding}`
+      logQuery({
+        ts,
+        endpoint: options.endpoint,
+        resourceNames: [definition.resourceId],
+        code,
+        ok: false,
+        error: safeMessage,
+        durationMs: Date.now() - started,
+      })
+      throw new Error(safeMessage)
+    }
   }
+  return { query: execute, rawRequest: execute }
 }

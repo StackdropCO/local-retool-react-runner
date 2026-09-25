@@ -4,6 +4,7 @@ import { isWrite, buildSqlSnippet, buildRestSnippet } from './snippets.js'
 import { logQuery } from './queryLog.js'
 import type { LocalResourceMap } from './localResourceConfig.js'
 import { createLocalRestResource } from './localRestResource.js'
+import { createExploreRestResource, type ExploreRunner } from './exploreRestResource.js'
 
 export class WriteBlockedError extends Error {
   constructor(sql: string) {
@@ -20,6 +21,7 @@ export type ResourceEntry = {
   sourceBindings: string[]
   executionBindings: string[]
   kind: 'sql' | 'rest'
+  transport?: 'explore'
 }
 export type ResourceMap = Record<string, ResourceEntry>
 
@@ -73,19 +75,28 @@ export async function resolveResources(mcp: McpClient, refs: ResourceRef[], sour
 
   const sourceIdentifiers = identifiersByLowercase(sourceTexts)
   const entries = list.map((ref): ResourceEntry => {
-    const binding = bindings.find((item) => item.resource_id === ref.name)?.variable_name ?? camel(ref.displayName)
+    const candidates = bindings.filter((item) => item.resource_id === ref.name)
+    const generatedBinding = candidates.find((item) => sourceIdentifiers.has(item.variable_name.toLowerCase()))?.variable_name
+      ?? candidates[0]?.variable_name
+    const binding = generatedBinding ?? camel(ref.displayName)
     const sourceBindings = [...(sourceIdentifiers.get(binding.toLowerCase()) ?? [])]
+    const aliases = [...new Set([binding, ...sourceBindings])]
+    const usesRawRequest = aliases.some((alias) => {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return sourceTexts.some((text) => new RegExp(`\\b${escaped}\\s*\\.\\s*rawRequest\\b`).test(text))
+    })
     return {
       resourceName: ref.name,
       displayName: ref.displayName,
       mcpBinding: binding,
-      sourceBindings: [...new Set([binding, ...sourceBindings])],
+      sourceBindings: aliases,
       // Retool's generated definition can disagree with the variable its
       // executor injects (including case). The checked-in app source is the
       // authoritative first choice; retain the generated spelling as a safe
       // fallback for resources that have no source occurrence.
       executionBindings: [...new Set([...sourceBindings, binding])],
       kind: ref.type === 'restapi' || ref.type === 'slackopenapi' ? 'rest' : 'sql',
+      ...(ref.type === 'restapi' && usesRawRequest ? { transport: 'explore' as const } : {}),
     }
   })
 
@@ -122,6 +133,8 @@ export function buildGlobals(
     environmentName?: string
     localResources?: LocalResourceMap
     localFetchImpl?: typeof fetch
+    exploreCheckoutDir?: string
+    explore?: ExploreRunner
   },
 ): Record<string, unknown> {
   const globals: Record<string, unknown> = {}
@@ -185,6 +198,25 @@ export function buildGlobals(
           return run(entry, (binding) => buildSqlSnippet(binding, sql, params))
         },
       }
+      for (const binding of entry.sourceBindings) globals[binding] = proxy
+    } else if (entry.transport === 'explore') {
+      if (!opts.exploreCheckoutDir) {
+        throw new Error(
+          `${entry.displayName} requires a Retool CLI checkout. ` +
+          'Set exploreCheckoutDir in config.json or pass --explore-checkout.',
+        )
+      }
+      const proxy = createExploreRestResource({
+        resourceName: entry.resourceName,
+        displayName: entry.displayName,
+        binding: entry.sourceBindings[0] ?? entry.mcpBinding,
+      }, {
+        checkoutDir: opts.exploreCheckoutDir,
+        environmentName: opts.environmentName ?? 'staging',
+        writes: opts.writes,
+        endpoint: opts.endpoint,
+        explore: opts.explore,
+      })
       for (const binding of entry.sourceBindings) globals[binding] = proxy
     } else {
       const makeProxy = (path: string[]): any =>

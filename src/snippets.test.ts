@@ -9,6 +9,9 @@ describe('isWrite', () => {
     expect(isWrite('  -- note\n UPDATE t SET a=1')).toBe(true)
     expect(isWrite('DELETE FROM t')).toBe(true)
     expect(isWrite('/* c */ merge into t ...')).toBe(true)
+    expect(isWrite('WITH changed AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM changed')).toBe(true)
+    expect(isWrite("SELECT 'DELETE FROM t', \"UPDATE\", `DROP` -- INSERT\nFROM t")).toBe(false)
+    expect(isWrite('SELECT $body$ DELETE FROM t $body$')).toBe(false)
   })
 })
 

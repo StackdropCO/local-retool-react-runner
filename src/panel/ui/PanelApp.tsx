@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { AppHeader } from './components/app-header'
-import { ConnectionCard } from './components/connection-card'
 import { DiscoveredApps } from './components/discovered-apps'
 import { RepositoryCard } from './components/repository-card'
 import { ResourceCard } from './components/resource-card'
@@ -77,16 +76,6 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
       setStatusError(`Unable to scan saved repository: ${cause instanceof Error ? cause.message : String(cause)}`)
     })
   }, [scan, status?.repoDir])
-
-  const saveMcpUrl = async (mcpUrl: string) => {
-    await api.saveMcpUrl(mcpUrl)
-    await refreshStatus()
-  }
-
-  const authorize = async () => {
-    await api.authorize()
-    await refreshStatus()
-  }
 
   const saveCurrentUser = async (currentUser: CurrentUser) => {
     await api.saveCurrentUser(currentUser)
@@ -241,10 +230,9 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
               <div className="lg:col-span-2">
                 <RepositoryCard api={api} initialRepoDir={status?.repoDir || ''} onScan={scan} />
               </div>
-              <ConnectionCard status={status} onSave={saveMcpUrl} onAuthorize={authorize} />
               <CurrentUserCard
                 currentUser={status?.currentUser ?? null}
-                loadGroups={async () => (await api.groups()).groups}
+                loadGroups={async () => status?.currentUser?.groups ?? []}
                 onSave={saveCurrentUser}
               />
             </div>

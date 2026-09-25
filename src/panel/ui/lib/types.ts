@@ -6,6 +6,8 @@ export interface PanelStatus {
   localResources?: LocalResourceSummary[]
   localResourceError?: string
   currentUser?: CurrentUser
+  runtimeTransport?: 'retool-cli'
+  exploreCheckoutDir?: string
 }
 
 export interface RetoolGroup {

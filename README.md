@@ -1,7 +1,7 @@
 # Retool React Local Runner
 
 Run an existing Retool **Apps as Code** React app on your machine while its
-backend queries use your authenticated Retool resources through MCP.
+backend queries use your authenticated Retool resources through Retool CLI.
 
 The runner reads the app directly from its Git worktree, serves the frontend
 with Vite, and executes its backend endpoints locally. It does not generate
@@ -52,8 +52,7 @@ files in, check out, reset, or otherwise modify your apps repository.
 
 ### Control panel
 
-- Saves and authorizes a per-user Retool MCP URL.
-- Shows MCP connection state and queryable Retool resources.
+- Shows the configured Retool CLI checkout and its generated resources.
 - Scans an Apps as Code repository and discovers registered Git worktrees.
 - Displays exact worktree path, branch, commit, and modification state.
 - Selects staging or production and read-only or write-enabled execution per app.
@@ -65,7 +64,7 @@ files in, check out, reset, or otherwise modify your apps repository.
 
 ### Retool resources and safety
 
-- Authenticates to Retool through standalone OAuth and refreshes cached tokens.
+- Uses `retool auth login` credentials and a `retool clone` checkout.
 - Resolves resources by UUID from the app manifest and keeps them scoped to the
   backend endpoint that declared them.
 - Supports SQL `.query(sql)` and `.query(sql, params)` interfaces.
@@ -114,14 +113,14 @@ pnpm panel
 
 Open [http://localhost:5170](http://localhost:5170), then:
 
-1. Enter your MCP URL, such as `https://<your-org>.retool.com/mcp`.
-2. Select **Save URL**, then **Authorize**. Your browser opens for Retool login.
+1. Sign in with `retool auth login` and create or reuse a `retool clone` checkout.
+2. Set its absolute path as `exploreCheckoutDir` in the runner's ignored `config.json`.
 3. Select your local Apps as Code repository and scan it.
 4. Choose the registered worktree beside an app.
 5. Select the environment and write mode, then run the preview.
 
 The preview opens on its own port and watches the exact files in the selected
-worktree. The runner remembers the MCP URL and apps repo directory locally.
+worktree. The runner remembers the CLI checkout and apps repo directory locally.
 
 > [!WARNING]
 > A production preview uses production Retool resources. Read-only mode blocks
@@ -134,8 +133,7 @@ worktree. The runner remembers the MCP URL and apps repo directory locally.
 
 The control panel is the easiest way to:
 
-- Configure and authorize an MCP connection.
-- Inspect queryable Retool resources.
+- Inspect resources generated in the Retool CLI checkout.
 - Scan an Apps as Code repository.
 - Select exact Git worktrees.
 - Choose staging or production.
@@ -184,7 +182,7 @@ pnpm panel -- --port 5170
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
 | `--app <path>` | Yes | — | Path to a Retool app containing `frontend/App.tsx`; an absolute path is recommended. |
-| `--mcp-url <url>` | No | Saved URL, then `RETOOL_MCP_URL` | Retool MCP endpoint. |
+| `--explore-checkout <path>` | Yes | Saved `exploreCheckoutDir` | Checkout created by `retool clone`, containing `.retool/app.json`. |
 | `--port <number>` | No | `5174` | Port for the app preview. |
 | `--environment <name>` | No | `staging` | Retool environment: `staging` or `production`. |
 | `--writes` | No | Off | Permit mutating resource calls. |
@@ -211,15 +209,15 @@ pnpm start -- \
   --environment staging \
   --writes
 
-# Supply the MCP URL instead of using saved configuration.
+# Supply the Retool CLI checkout instead of using saved configuration.
 pnpm start -- \
   --app "/absolute/path/to/apps-v2/Group/App" \
-  --mcp-url "https://<your-org>.retool.com/mcp"
+  --explore-checkout "/absolute/path/to/retool-clone"
 ```
 
-The MCP URL is resolved in this order: `--mcp-url`, the value saved through the
-panel, then `RETOOL_MCP_URL`. Preview startup exits with status `1` for invalid
-configuration, a missing app, authorization failures, or unavailable resources.
+The CLI checkout is resolved from `--explore-checkout`, then the saved
+`exploreCheckoutDir`. Preview startup exits with status `1` for invalid
+configuration, a missing app, authorization failures, or missing generated resources.
 
 ## Worktrees and parallel branches
 
@@ -345,12 +343,12 @@ test needs authenticated Retool resources.
 
 ## Authentication and local data
 
-On first connection to an MCP URL, a browser window opens for Retool login.
-Tokens are cached by host under `.mcp-auth/<host>/` and refreshed automatically.
+Authenticate with `retool auth login`; the Retool CLI owns and refreshes its
+credentials. The active preview does not read this runner's legacy MCP cache.
 The following local data is excluded from Git by this repository:
 
-- `.mcp-auth/` — OAuth credentials.
-- `config.json` — the saved MCP URL and apps repo path.
+- `.mcp-auth/` — legacy, currently inactive MCP credentials.
+- `config.json` — the saved CLI checkout and apps repo path.
 - `logs/` — resource query history.
 - `.local-resources/` — private OpenAPI definitions and local base URLs.
 
@@ -409,21 +407,24 @@ contents may be sensitive.
    modules that post to `/rpc/:endpoint`.
 3. The RPC route executes the app's own `backend/<group>/<endpoint>.ts` locally.
 4. Resource globals declared by that endpoint are injected at runtime.
-5. Each non-local global forwards its call to `retool_execute_resource_ts`
-   through an authenticated MCP client.
+5. Every remote resource call runs through `retool resource explore`, using
+   the credentials and generated bindings from the configured CLI checkout.
+   There is no MCP execution fallback.
 
 ## Programmatic live SQL tests
 
-Live SQL checks are a separate, explicit Vitest project. The MCP only executes
-the SQL and returns rows; assertions remain ordinary Vitest assertions. The
+Live SQL checks are a separate, explicit Vitest project. Retool CLI only
+executes the SQL and returns rows; assertions remain ordinary Vitest assertions. The
 default `pnpm test` command never discovers files under `tests/live/`.
 
-Authorize the MCP once using the runner or `pnpm probe`, then run the smoke test
-with a real Retool resource UUID. The helper uses the MCP URL saved by the
-control panel; `RETOOL_MCP_URL` can override it:
+Sign in with `retool auth login`, then use a checkout created by `retool clone`.
+The binding name comes from `backend/resources/*.d.ts` in that checkout; no
+resource UUID is required:
 
 ```sh
-LIVE_SQL_RESOURCE_ID=00000000-0000-0000-0000-000000000000 \
+RETOOL_CLI_CHECKOUT=/absolute/path/to/retool-checkout \
+LIVE_SQL_RESOURCE_BINDING=databricks \
+LIVE_SQL_ENVIRONMENT=staging \
 pnpm test:live
 ```
 
@@ -432,12 +433,14 @@ own live assertions beside their SQL builders:
 
 ```ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { createLiveSqlRunner, type LiveSqlRunner } from 'local-mcp-runner/live-sql'
+import { createCliSqlRunner, type LiveSqlRunner } from 'local-mcp-runner/live-sql'
 
 let live: LiveSqlRunner
 beforeAll(async () => {
-  live = await createLiveSqlRunner({
-    resources: { databricks: process.env.LIVE_SQL_RESOURCE_ID! },
+  live = await createCliSqlRunner({
+    resources: { databricks: 'databricks' },
+    checkoutDir: process.env.RETOOL_CLI_CHECKOUT!,
+    environmentName: 'staging',
   })
 })
 afterAll(() => live.close())
@@ -450,11 +453,10 @@ it('keeps the attributed total within two percent of the source total', async ()
 })
 ```
 
-`createLiveSqlRunner` resolves resource bindings once, reuses one MCP
-connection, accepts positional SQL parameters, and rejects obvious write
-statements before they reach MCP. It requires the existing OAuth cache by
-default, so a test run cannot unexpectedly stop to open an authorization
-browser.
+`createCliSqlRunner` accepts positional SQL parameters and rejects obvious
+write statements before they reach Retool. The CLI is also invoked without
+`--allow-mutative`. The checkout owns resource resolution and CLI credentials,
+so agents do not need MCP resource IDs or the runner's OAuth cache.
 
 For live checks, gate the selected Retool environment against a value returned
 by the database itself. Merely passing `environmentName: 'staging'` proves what
@@ -463,8 +465,9 @@ single-row environment metadata table is strongest; a distinct database name
 is a useful fallback:
 
 ```ts
-const live = await createLiveSqlRunner({
-  resources: { postgres: process.env.LIVE_SQL_RESOURCE_ID! },
+const live = await createCliSqlRunner({
+  resources: { postgres: 'lakebaseRetoolOltp' },
+  checkoutDir: process.env.RETOOL_CLI_CHECKOUT!,
   environmentName: 'staging',
   environmentGate: {
     resource: 'postgres',
@@ -492,18 +495,19 @@ replays schema and seed SQL on reset, and force-removes its container on close.
 Disposable tests have no Retool environment selector or MCP client at all;
 that separation is the primary protection against accidental production use.
 
-Capture a schema-only fixture once through the authenticated MCP resource:
+Capture a schema-only fixture once through an authenticated Retool CLI checkout:
 
 ```sh
 pnpm schema:postgres -- \
-  --resource 00000000-0000-0000-0000-000000000000 \
+  --binding lakebaseRetoolOltp \
+  --checkout /absolute/path/to/retool-checkout \
   --environment staging \
   --out tests/fixtures/postgres-schema.sql
 ```
 
 The capture reads PostgreSQL catalogs only; it never selects application rows.
 Review the generated DDL before committing it. Use explicit, sanitized seed
-fixtures for the rows a test needs. The MCP snapshot covers schemas, enums,
+fixtures for the rows a test needs. The CLI snapshot covers schemas, enums,
 sequences, tables, constraints, standalone indexes, and views. For databases
 that depend on extensions, functions, triggers, policies, or grants, use a
 reviewed `pg_dump --schema-only --no-owner --no-privileges` fixture instead.
@@ -613,8 +617,9 @@ entry point is `frontend/App.tsx`, and `orgTheme.css` is optional.
   resource references in the app manifest.
 - SQL resources and OpenAPI-style REST resources are the supported resource
   families. Other Retool resource types may require a dedicated runtime shim.
-- A plain Retool `restapi` resource with only a base URL cannot run through MCP;
-  configure it as a private local OpenAPI resource instead.
+- A plain Retool `restapi` resource using `rawRequest` runs through
+  `retool resource explore`; this requires a valid CLI checkout configured as
+  `exploreCheckoutDir` or passed with `--explore-checkout`.
 - Read-only mode detects common SQL mutation statements and blocks non-read
   methods for local REST resources. It is a safety layer, not a database or
   network sandbox.
@@ -625,7 +630,7 @@ entry point is `frontend/App.tsx`, and `orgTheme.css` is optional.
   requested branch.
 - A running preview must be restarted after its private OpenAPI document is
   updated.
-- Large analytical calls remain subject to Retool MCP and upstream gateway
+- Large analytical calls remain subject to Retool and upstream gateway
   request, response, and timeout limits.
 - The runner deliberately does not create worktrees, switch branches, pull,
   reset, commit, or otherwise manage the apps repository.

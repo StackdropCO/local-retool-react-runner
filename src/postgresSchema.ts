@@ -25,7 +25,7 @@ function schemaFilter(schemas: string[]): string {
 
 /**
  * Capture a portable, schema-only PostgreSQL fixture through any read-only SQL
- * transport, including createLiveSqlRunner(). Production rows are never read.
+ * transport, including createCliSqlRunner(). Production rows are never read.
  */
 export async function capturePostgresSchema(
   options: CapturePostgresSchemaOptions,

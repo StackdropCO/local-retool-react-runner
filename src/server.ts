@@ -11,6 +11,7 @@ import type { McpClient } from './mcpClient.js'
 import { loadLocalResourceDefinitions, type LocalResourceMap } from './localResourceConfig.js'
 import type { RetoolEnvironment } from './environment.js'
 import { resolveCurrentUser, type CurrentUser } from './currentUser.js'
+import { validateRetoolCheckout } from './retoolExplore.js'
 
 // The app frontend lives outside the tool root, so Vite can't resolve its bare
 // npm imports (react, radix, lucide, ...) — those packages are installed in the
@@ -59,7 +60,10 @@ export async function assertResourcesAvailableInEnvironment(
   localResources: LocalResourceMap,
   environmentName: RetoolEnvironment,
 ): Promise<void> {
-  const resourceNames = Object.keys(resources).filter((resourceId) => !localResources[resourceId])
+  if (mcp.skipEnvironmentPreflight) return
+  const resourceNames = Object.entries(resources)
+    .filter(([resourceId, entry]) => !localResources[resourceId] && entry.transport !== 'explore')
+    .map(([resourceId]) => resourceId)
   if (!resourceNames.length) return
   try {
     // Merely asking Retool to inject the selected resources is enough to
@@ -80,6 +84,7 @@ export async function startServer(opts: {
   environmentName: RetoolEnvironment
   mcp: McpClient
   currentUser?: CurrentUser | (() => CurrentUser)
+  exploreCheckoutDir?: string
 }) {
   const currentUser = () => resolveCurrentUser(
     typeof opts.currentUser === 'function' ? opts.currentUser() : opts.currentUser,
@@ -91,6 +96,18 @@ export async function startServer(opts: {
   const map = await resolveResources(opts.mcp, refs, backendFiles.map((file) => readFileSync(file, 'utf8')))
   const localResources = loadLocalResourceDefinitions({ appResourceIds: new Set(refs.map((ref) => ref.name)) })
   validateLocalResourceBindings(map, localResources)
+  const exploreResources = Object.entries(map)
+    .filter(([resourceId, entry]) => entry.transport === 'explore' && !localResources[resourceId])
+  if (exploreResources.length) {
+    try {
+      validateRetoolCheckout(opts.exploreCheckoutDir ?? '')
+    } catch (error) {
+      throw new Error(
+        `${exploreResources.map(([, entry]) => entry.displayName).join(', ')} requires Retool CLI execution: ` +
+        String((error as Error)?.message ?? error),
+      )
+    }
+  }
   await assertResourcesAvailableInEnvironment(opts.mcp, map, localResources, opts.environmentName)
   for (const definition of Object.values(localResources)) {
     console.log(
@@ -124,6 +141,7 @@ export async function startServer(opts: {
       normalize,
       environmentName: opts.environmentName,
       localResources: endpointLocalResources,
+      exploreCheckoutDir: opts.exploreCheckoutDir,
     })
     const runner = createRunner({ appDir: opts.appDir, globals, user: currentUser() })
     try {

@@ -25,4 +25,9 @@ describe('config', () => {
     writeConfig({ currentUser }, file)
     expect(readConfig(file)).toEqual({ mcpUrl: 'https://a/mcp', currentUser })
   })
+
+  it('persists the Retool CLI checkout used for resource explore', () => {
+    writeConfig({ exploreCheckoutDir: '/retool/checkout' }, file)
+    expect(readConfig(file)).toEqual({ exploreCheckoutDir: '/retool/checkout' })
+  })
 })

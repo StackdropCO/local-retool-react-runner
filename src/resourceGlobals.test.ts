@@ -69,6 +69,23 @@ describe('resolveResources', () => {
       ['const rows = await warehouseDB.query("SELECT 1")'],
     )).rejects.toThrow(/ambiguous resource binding.*warehouseDB/i)
   })
+
+  it('routes an unsupported plain REST rawRequest binding through Retool CLI explore', async () => {
+    const mcp = fakeMcp()
+    mcp.getResourceBindings.mockResolvedValue([])
+
+    const resolved = await resolveResources(
+      mcp as any,
+      [{ name: 'fleet-uuid', displayName: 'Fleet 360', type: 'restapi' }],
+      ['return fleet360.rawRequest({ method: "GET", path: "vehicle" })'],
+    )
+
+    expect(resolved['fleet-uuid']).toMatchObject({
+      mcpBinding: 'fleet360',
+      sourceBindings: ['fleet360'],
+      transport: 'explore',
+    })
+  })
 })
 
 describe('buildGlobals', () => {
@@ -142,6 +159,38 @@ describe('buildGlobals', () => {
       'return await slack.chat.postMessage({"channel":"C123","text":"Shift report"})',
       undefined,
     )
+  })
+
+  it('executes a plain REST rawRequest through Retool CLI instead of MCP', async () => {
+    const mcp = fakeMcp()
+    const explore = vi.fn().mockResolvedValue({ ran: true, data: { data: [{ uuid: 'one' }] } })
+    const resourceMap: ResourceMap = {
+      fleet: {
+        resourceName: 'fleet',
+        displayName: 'Fleet 360',
+        mcpBinding: 'fleet360',
+        sourceBindings: ['fleet360'],
+        executionBindings: ['fleet360'],
+        kind: 'rest',
+        transport: 'explore',
+      },
+    }
+    const globals: any = buildGlobals(mcp as any, resourceMap, {
+      writes: false,
+      endpoint: 'vehicles',
+      environmentName: 'staging',
+      normalize: (value) => value,
+      exploreCheckoutDir: '/checkout',
+      explore,
+    })
+
+    await expect(globals.fleet360.rawRequest({ method: 'GET', path: 'vehicle' }))
+      .resolves.toEqual({ data: [{ uuid: 'one' }] })
+    expect(mcp.executeResourceTs).not.toHaveBeenCalled()
+    expect(explore).toHaveBeenCalledWith(expect.stringContaining('fleet360.rawRequest'), expect.objectContaining({
+      checkoutDir: '/checkout',
+      environmentName: 'staging',
+    }))
   })
 
   it('sql read forwards a query snippet and normalizes the result', async () => {
