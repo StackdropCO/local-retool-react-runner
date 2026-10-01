@@ -3,13 +3,18 @@ import { join } from 'node:path'
 import { TOOL_ROOT } from './paths.js'
 import type { CurrentUser } from './currentUser.js'
 
-// Small persisted config (git-ignored) so the MCP URL and last-used repo dir
-// survive restarts and page reloads. Tokens live separately under .mcp-auth/.
+// Small persisted config (git-ignored) so the CLI checkout and last-used app
+// source directory survive restarts and page reloads.
 export type Config = {
   mcpUrl?: string
   repoDir?: string
+  /** Parent folder containing standalone Retool CLI checkouts. */
+  cliAppsDir?: string
+  /** Apps as Code repository used for protected Git-backed apps. */
+  gitRepoDir?: string
+  sourceMode?: 'cli' | 'git'
   currentUser?: CurrentUser
-  /** A `retool clone` checkout used by `retool resource explore`. */
+  /** A `retool clone` checkout used for app source and resource execution. */
   exploreCheckoutDir?: string
 }
 

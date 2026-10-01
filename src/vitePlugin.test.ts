@@ -30,3 +30,16 @@ describe('currentUserHookModuleSource', () => {
     expect(load(resolved!)).toContain('export function useCurrentUser()')
   })
 })
+
+describe('hooksVirtualPlugin', () => {
+  it('runs before filesystem resolution and intercepts absolute generated hook paths', () => {
+    const plugin = hooksVirtualPlugin({ appDir: '/app', endpoints: ['getShiftOptions'] })
+    const resolveId = plugin.resolveId as (id: string) => string | null
+
+    expect(plugin.enforce).toBe('pre')
+    expect(resolveId('/checkout/frontend/hooks/backend/shift.ts'))
+      .toBe('\0virtual:local-mcp-runner-hooks')
+    expect(resolveId('/checkout/frontend/hooks/useCurrentUser.ts'))
+      .toBe('\0virtual:local-mcp-runner-current-user')
+  })
+})

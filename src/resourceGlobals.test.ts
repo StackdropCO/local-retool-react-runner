@@ -50,6 +50,7 @@ describe('resolveResources', () => {
       ['lb-uuid'],
       'return await lakebaseRetoolOltp.query("SELECT 1")',
       undefined,
+      { safeRead: true },
     )
   })
 
@@ -197,7 +198,12 @@ describe('buildGlobals', () => {
     const mcp = fakeMcp({ data: [{ ok: 1 }] })
     const g: any = buildGlobals(mcp as any, map, { writes: true, endpoint: 'e', normalize: (r) => r })
     const out = await g.databricks.query('SELECT 1')
-    expect(mcp.executeResourceTs).toHaveBeenCalledWith(['db-uuid'], 'return await databricks.query("SELECT 1")', undefined)
+    expect(mcp.executeResourceTs).toHaveBeenCalledWith(
+      ['db-uuid'],
+      'return await databricks.query("SELECT 1")',
+      undefined,
+      { safeRead: true },
+    )
     expect(out).toEqual({ data: [{ ok: 1 }] })
   })
 
@@ -216,6 +222,7 @@ describe('buildGlobals', () => {
       ['db-uuid'],
       'return await databricks.query("SELECT 1")',
       'staging',
+      { safeRead: true },
     )
   })
 
@@ -229,6 +236,7 @@ describe('buildGlobals', () => {
       ['db-uuid'],
       'return await databricks.query("SELECT * FROM t WHERE day = ? AND geo = ?", ["2026-08-18","lhr"])',
       undefined,
+      { safeRead: true },
     )
   })
 
@@ -265,7 +273,19 @@ describe('buildGlobals', () => {
 
     await globals.appDb.query('SELECT 1')
 
-    expect(mcp.executeResourceTs).toHaveBeenNthCalledWith(1, ['uuid'], 'return await appDb.query("SELECT 1")', undefined)
-    expect(mcp.executeResourceTs).toHaveBeenNthCalledWith(2, ['uuid'], 'return await appDB.query("SELECT 1")', undefined)
+    expect(mcp.executeResourceTs).toHaveBeenNthCalledWith(
+      1,
+      ['uuid'],
+      'return await appDb.query("SELECT 1")',
+      undefined,
+      { safeRead: true },
+    )
+    expect(mcp.executeResourceTs).toHaveBeenNthCalledWith(
+      2,
+      ['uuid'],
+      'return await appDB.query("SELECT 1")',
+      undefined,
+      { safeRead: true },
+    )
   })
 })

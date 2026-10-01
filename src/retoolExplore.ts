@@ -63,10 +63,18 @@ export const runCommand: CommandRunner = (command, args, options) => new Promise
   child.stdin.end(options.input)
 })
 
+/**
+ * Row cap passed to `retool resource explore --rows`. Production loads are not
+ * capped, so this only has to exceed the largest real result: a full Tokyo day
+ * is ~40 vehicles x 1440 minutes. The CLI returns 100k rows in ~16s; a result
+ * past the cap still fails closed rather than rendering a partial timeline.
+ */
+export const DEFAULT_EXPLORE_ROWS = 100_000
+
 export async function runRetoolExplore(code: string, options: RetoolExploreOptions): Promise<RetoolExplorePayload> {
   validateRetoolCheckout(options.checkoutDir)
   if (!options.environmentName.trim()) throw new Error('Retool environment is required for resource explore')
-  const rows = options.rows ?? 5000
+  const rows = options.rows ?? DEFAULT_EXPLORE_ROWS
   if (!Number.isSafeInteger(rows) || rows < 1) throw new Error('Retool explore row limit must be a positive integer')
 
   const args = [

@@ -11,9 +11,9 @@ type AppHeaderProps = {
  * Plain text and a single state dot — no pills, no decorative icons.
  */
 export function AppHeader({ status, runningCount, loading }: AppHeaderProps) {
-  const cliCheckout = status?.exploreCheckoutDir
-  const connected = Boolean(cliCheckout)
-  const connectionLabel = loading ? 'Checking' : connected ? 'CLI ready' : 'CLI not configured'
+  const appsRootDir = status?.repoDir
+  const connected = Boolean(appsRootDir)
+  const connectionLabel = loading ? 'Checking' : connected ? 'Apps folder ready' : 'Apps folder not configured'
   const panelPort = typeof window === 'undefined' ? '' : window.location.port
 
   return (
@@ -27,7 +27,7 @@ export function AppHeader({ status, runningCount, loading }: AppHeaderProps) {
           </span>
         </div>
         <div className="flex items-center gap-3 text-xs">
-          {cliCheckout && <span className="mono hidden max-w-72 truncate normal-case tracking-normal text-muted-foreground sm:inline" title={cliCheckout}>{cliCheckout}</span>}
+          {appsRootDir && <span className="mono hidden max-w-72 truncate normal-case tracking-normal text-muted-foreground sm:inline" title={appsRootDir}>{appsRootDir}</span>}
           <span
             className={`inline-flex h-6 items-center gap-2 px-2.5 font-semibold ${connected ? 'bg-emerald-50 text-emerald-700' : 'bg-muted text-muted-foreground'}`}
           >

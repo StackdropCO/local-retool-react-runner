@@ -1,11 +1,13 @@
 # Retool React Local Runner
 
-Run an existing Retool **Apps as Code** React app on your machine while its
-backend queries use your authenticated Retool resources through Retool CLI.
+Run a Retool React app directly from its Retool CLI checkout while backend
+queries use your authenticated Retool resources.
 
-The runner reads the app directly from its Git worktree, serves the frontend
-with Vite, and executes its backend endpoints locally. It does not generate
-files in, check out, reset, or otherwise modify your apps repository.
+The everyday workflow is CLI-first: clone or pull an app, edit and run it
+locally, validate it, then make one explicitly confirmed preview push. The
+runner never pushes on its own and cannot publish an app live. Git worktrees
+remain supported as an optional advanced workflow, but a separate Apps as Code
+repository is no longer required.
 
 > [!NOTE]
 > Retool React Local Runner is a Stackdrop project built for Retool Apps as
@@ -23,15 +25,14 @@ files in, check out, reset, or otherwise modify your apps repository.
 - **Resource preflight checks:** the runner validates required resources in the
   selected environment before serving the app. The panel links missing resources
   directly to their Retool configuration pages.
-- **Agent-ready typechecking:** coding agents and LLMs can typecheck one app in
-  one exact branch worktree and consume stable JSON diagnostics without starting
-  a preview or generating files in the apps repo.
+- **Agent-ready typechecking:** coding agents and LLMs can typecheck a CLI
+  checkout directly and consume stable JSON diagnostics without starting a
+  preview or generating files in the app.
 - **App-level test execution:** run an Apps as Code app's local Vitest suite
   through the runner with `--root`, without installing Vitest in the app
   repository.
-- **More reliable parallel development:** each worktree preview has its own
-  process, port, and Vite cache. The panel displays its branch, commit, dirty
-  state, environment, and write mode.
+- **Flexible local development:** standalone CLI checkouts run directly; Git
+  worktrees, when present, still get independent processes, ports, and Vite caches.
 - **Improved local REST support:** private OpenAPI resources remain outside the
   apps repo, are filtered to the selected app, and can be inspected, validated,
   and updated through the panel.
@@ -52,12 +53,15 @@ files in, check out, reset, or otherwise modify your apps repository.
 
 ### Control panel
 
-- Shows the configured Retool CLI checkout and its generated resources.
-- Scans an Apps as Code repository and discovers registered Git worktrees.
-- Displays exact worktree path, branch, commit, and modification state.
+- Signs in with Retool CLI and lists available apps automatically.
+- Uses one saved parent folder and clones each app into its own UUID child folder.
+- Scans every Retool CLI checkout below that parent folder.
+- Displays Git worktree metadata when the checkout provides it.
 - Selects staging or production and read-only or write-enabled execution per app.
 - Confirms production launches and write access explicitly.
 - Starts, opens, monitors, and stops independent app previews.
+- Creates a Retool preview build only after a message and explicit push confirmation.
+- Does not expose a live-publish action.
 - Shows the active environment and write mode for every running app.
 - Reports environment-specific missing resources with direct Retool links.
 - Lists, opens, validates, and atomically saves private local OpenAPI documents.
@@ -74,11 +78,13 @@ files in, check out, reset, or otherwise modify your apps repository.
 - Records resource calls, outcomes, failures, row counts, and duration in local
   JSON Lines query history.
 
-### Git and automation
+### CLI workflow and automation
 
-- Uses existing Git worktrees without creating, switching, pulling, or resetting
-  branches.
-- Validates that previews remain attached to the selected worktree.
+- Uses an independent `retool clone` checkout per app for source, generated
+  resource bindings, local preview, pull, and final `retool push`.
+- Makes clone, pull, and preview push explicit panel actions; live publishing
+  remains outside the runner.
+- Optionally validates existing Git worktrees without creating or switching them.
 - Typechecks an app's frontend and backend against virtual Retool hooks and
   manifest-backed resource globals.
 - Produces human-readable diagnostics or stable JSON for scripts, coding agents,
@@ -88,11 +94,11 @@ files in, check out, reset, or otherwise modify your apps repository.
 
 ## Requirements
 
-- Node.js 20 or newer.
+- Node.js 22 or newer (required by the Retool CLI).
 - pnpm 11 (`corepack enable` is recommended; this repository pins pnpm 11.5.0).
-- Git.
-- Access to a Retool organization with MCP enabled.
-- A local checkout of your Retool Apps as Code repository.
+- Retool CLI (`pnpm add --global @tryretool/cli`).
+- Git (used internally by the Retool CLI).
+- Access to a Retool organization and a local parent folder for cloned apps.
 
 ## Quick start
 
@@ -111,16 +117,31 @@ Start the control panel:
 pnpm panel
 ```
 
-Open [http://localhost:5170](http://localhost:5170), then:
+Open [http://localhost:5170](http://localhost:5170). Settings automatically
+detects the installed Retool CLI, its default authenticated host, and available
+apps. If authentication is missing or expired, sign in there; then choose one
+absolute parent folder. Every app you clone gets its own UUID child folder
+inside it. You can use the same layout directly from a terminal:
 
-1. Sign in with `retool auth login` and create or reuse a `retool clone` checkout.
-2. Set its absolute path as `exploreCheckoutDir` in the runner's ignored `config.json`.
-3. Select your local Apps as Code repository and scan it.
-4. Choose the registered worktree beside an app.
-5. Select the environment and write mode, then run the preview.
+```sh
+retool auth login --host example.retool.com
+retool apps
+mkdir -p /path/to/retool-apps
+cd /path/to/retool-apps
+retool clone <app-uuid>
+cd <app-uuid>
+pnpm install
+```
 
-The preview opens on its own port and watches the exact files in the selected
-worktree. The runner remembers the CLI checkout and apps repo directory locally.
+Then:
+
+1. The panel scans every cloned app under the saved parent folder automatically.
+2. Select the environment and write mode, then run the local preview.
+3. Edit locally and repeat until the app is ready.
+4. Run `retool check` inside the app checkout.
+5. On that app's card, choose **Push preview**, enter a message, and confirm the push.
+
+The preview opens on its own port and watches the checkout files directly.
 
 > [!WARNING]
 > A production preview uses production Retool resources. Read-only mode blocks
@@ -133,11 +154,15 @@ worktree. The runner remembers the CLI checkout and apps repo directory locally.
 
 The control panel is the easiest way to:
 
+- Sign in with Retool CLI and list available apps.
+- Choose one local apps folder and clone apps into automatic UUID subfolders.
+- Pull an individual app's latest source from its app card.
 - Inspect resources generated in the Retool CLI checkout.
-- Scan an Apps as Code repository.
-- Select exact Git worktrees.
+- Scan a Retool CLI app checkout.
+- Use Git worktrees when available, without requiring them.
 - Choose staging or production.
 - Start, monitor, and stop app previews.
+- Push a tested checkout to a Retool preview after explicit confirmation.
 - Configure private local OpenAPI resources.
 
 Connection and process state remain visible in the header. Write access is off
@@ -155,9 +180,9 @@ pnpm panel # http://localhost:5170
 | Command | Purpose |
 | --- | --- |
 | `pnpm panel` | Open the control panel. |
-| `pnpm start -- --app <path>` | Run one app until the process is stopped. |
-| `pnpm dev -- --app <path>` | Run one app and restart its backend when source files change. |
-| `pnpm typecheck -- --branch <name> --app <app>` | Typecheck one app in one registered branch worktree. |
+| `pnpm start -- --checkout <path>` | Run one CLI checkout until the process is stopped. |
+| `pnpm dev -- --checkout <path>` | Run one CLI checkout and restart its backend when source files change. |
+| `pnpm typecheck -- --app <path>` | Typecheck one app directly. |
 | `pnpm exec vitest run --root <app-path>` | Run an app's local Vitest suite using the runner's installed Vitest. |
 | `pnpm test` | Run the runner's Vitest suite. |
 
@@ -181,8 +206,9 @@ pnpm panel -- --port 5170
 
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `--app <path>` | Yes | — | Path to a Retool app containing `frontend/App.tsx`; an absolute path is recommended. |
-| `--explore-checkout <path>` | Yes | Saved `exploreCheckoutDir` | Checkout created by `retool clone`, containing `.retool/app.json`. |
+| `--checkout <path>` | No | Saved `exploreCheckoutDir` | Checkout created by `retool clone`; used for both app source and resources. |
+| `--app <path>` | No | The sole app under the checkout | Absolute app path or path relative to the checkout. |
+| `--explore-checkout <path>` | No | — | Backward-compatible alias for `--checkout`. |
 | `--port <number>` | No | `5174` | Port for the app preview. |
 | `--environment <name>` | No | `staging` | Retool environment: `staging` or `production`. |
 | `--writes` | No | Off | Permit mutating resource calls. |
@@ -191,15 +217,15 @@ pnpm panel -- --port 5170
 Examples:
 
 ```sh
-# Staging and read-only are the defaults.
-pnpm start -- --app "/absolute/path/to/apps-v2/Group/App"
+# One Retool CLI checkout, with staging and read-only as defaults.
+pnpm start -- --checkout "/absolute/path/to/retool-app"
 
 # Restart the backend automatically when files change.
-pnpm dev -- --app "/absolute/path/to/apps-v2/Group/App"
+pnpm dev -- --checkout "/absolute/path/to/retool-app"
 
 # Use production resources in read-only mode.
 pnpm start -- \
-  --app "/absolute/path/to/apps-v2/Group/App" \
+  --checkout "/absolute/path/to/retool-app" \
   --environment production
 
 # Explicitly allow writes against staging and validate the branch.
@@ -209,17 +235,36 @@ pnpm start -- \
   --environment staging \
   --writes
 
-# Supply the Retool CLI checkout instead of using saved configuration.
-pnpm start -- \
-  --app "/absolute/path/to/apps-v2/Group/App" \
-  --explore-checkout "/absolute/path/to/retool-clone"
+# If a checkout contains multiple apps, choose one explicitly.
+pnpm start -- --checkout "/absolute/path/to/checkout" --app "Operations/Report App"
 ```
 
-The CLI checkout is resolved from `--explore-checkout`, then the saved
-`exploreCheckoutDir`. Preview startup exits with status `1` for invalid
+The CLI checkout is resolved from `--checkout`, the legacy
+`--explore-checkout`, then saved `exploreCheckoutDir`. Preview startup exits with status `1` for invalid
 configuration, a missing app, authorization failures, or missing generated resources.
 
-## Worktrees and parallel branches
+## Develop, validate, and push
+
+The runner handles the local interactive preview. Each app card can pull its
+checkout or perform the final preview push for its selected source; the
+equivalent terminal flow is:
+
+```sh
+cd /absolute/path/to/retool-app
+retool pull
+
+# Edit while the runner is open, then validate as often as needed.
+retool check
+
+# The final network-changing step is always explicit.
+retool push --wait -m "Finish report filters"
+```
+
+`retool push` validates locally before sending changes and creates a Retool
+preview build. The runner intentionally has no `retool publish` endpoint or UI;
+live publishing must be handled separately by you or your development agent.
+
+## Optional Git worktrees
 
 The panel discovers worktrees through `git worktree list`. It does not infer a
 branch from a directory name, create worktrees, check out branches, pull, reset,
@@ -253,31 +298,25 @@ resources use their configured local base URL instead of the Retool environment.
 
 ## Typecheck an app
 
-Typecheck one app in one registered worktree without starting a preview:
+Typecheck a cloned app directly without starting a preview:
 
 ```sh
-pnpm typecheck -- \
-  --branch "feature/report" \
-  --app "Operations/Report App"
+pnpm typecheck -- --app "/absolute/path/to/retool-app"
 ```
 
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `--branch <name>` | Yes | — | Branch with exactly one registered Git worktree. |
-| `--app <app>` | Yes | — | App name below `apps-v2/`, an `apps-v2/...` path, or an absolute path. |
-| `--repo <path>` | No | Path saved by the panel | Apps as Code repository used to find worktrees. |
+| `--app <app>` | Yes | — | Absolute app path, or a path relative to `--checkout`. |
+| `--checkout <path>` | No | Path saved by the panel | Retool CLI checkout used to resolve a relative app path. |
+| `--branch <name>` | No | — | Enable optional validation against an existing Git worktree. |
+| `--repo <path>` | No | Path saved by the panel | Legacy alias used with `--branch`. |
 | `--json` | No | Off | Emit one structured JSON result instead of text diagnostics. |
 | `--help`, `-h` | No | — | Print usage and exit successfully. |
 
-`--app` may be relative to `apps-v2/`, start with `apps-v2/`, or be an absolute
-app path. The apps repo defaults to the path saved in the panel. Override it
-with `--repo "/path/to/apps-repo"`.
-
-The named branch must have exactly one registered Git worktree. The command
-checks the app's `frontend/` and `backend/` files without checking out a branch
-or writing generated hooks, resource declarations, configuration, or
-dependencies into the apps repo. Diagnostics use `file:line:column` locations,
-and the process exits `0` when clean or `1` for type or configuration errors.
+The command checks the app's `frontend/` and `backend/` files without writing
+generated hooks, resource declarations, configuration, or dependencies into the
+checkout. Diagnostics use `file:line:column` locations, and the process exits
+`0` when clean or `1` for type or configuration errors.
 
 For structured output:
 
@@ -348,7 +387,7 @@ credentials. The active preview does not read this runner's legacy MCP cache.
 The following local data is excluded from Git by this repository:
 
 - `.mcp-auth/` — legacy, currently inactive MCP credentials.
-- `config.json` — the saved CLI checkout and apps repo path.
+- `config.json` — the saved local apps parent folder and most recent CLI checkout.
 - `logs/` — resource query history.
 - `.local-resources/` — private OpenAPI definitions and local base URLs.
 
@@ -392,9 +431,27 @@ await exampleUpload.query({
 `DELETE` require `--writes`. Redirects are not followed, and logs omit request
 bodies, authorization headers, and signed query values.
 
+## Simulated users
+
+The panel's **Emulated current user** editor controls the identity exposed by
+both `useCurrentUser()` and backend `req.user`. Set a synthetic or real-looking
+ID, email, name, metadata, and group memberships, then reload an open preview.
+
+Opening the editor loads the Retool group directory through the MCP's read-only
+`retool_list_groups` tool so memberships can use the org's real group IDs and
+names. This is metadata discovery only: app SQL, REST, Fleet, and Slack calls
+remain exclusively on `retool resource explore`, with no MCP execution fallback.
+The group lookup uses the MCP OAuth cache and may open the one-time browser flow
+if no token is cached. Configure the metadata endpoint and authorize it from
+**Settings → Retool MCP metadata connection**.
+
+When no MCP endpoint has been configured, the panel synchronizes the emulated
+user's name and email from `retool whoami --json`. Group membership is then
+edited and stored locally; opening the user editor does not attempt an MCP call.
+
 ## Query history
 
-Every MCP `execute_resource_ts` call is appended to a daily JSON Lines file at
+Every remote resource execution is appended to a daily JSON Lines file at
 `logs/queries-YYYY-MM-DD.jsonl`. Entries include the resource, exact SQL or
 resource code (including any serialized positional parameters), success or
 error state, row count, and duration. The directory is ignored by Git, but its
@@ -410,6 +467,11 @@ contents may be sensitive.
 5. Every remote resource call runs through `retool resource explore`, using
    the credentials and generated bindings from the configured CLI checkout.
    There is no MCP execution fallback.
+6. Calls started together by one RPC request (for example, calls inside the
+   same `Promise.all`) are coalesced into one CLI invocation. Calls separated
+   by an `await` remain separate because the later code depends on the earlier
+   result. Locally verified reads may share Fleet's CLI classification override;
+   unclassified REST operations remain isolated so read-only gating is preserved.
 
 ## Programmatic live SQL tests
 

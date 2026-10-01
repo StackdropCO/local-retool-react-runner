@@ -17,6 +17,18 @@ describe('panel API', () => {
     await expect(createPanelApi().saveMcpUrl('bad')).rejects.toThrow('invalid URL')
   })
 
+  it('explains that a CLI 404 means the panel backend must be restarted', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    }))
+
+    await expect(createPanelApi().cliStatus()).rejects.toThrow(
+      'This panel backend does not support Retool CLI actions yet. Stop it, restart `pnpm panel`, then reload this page.',
+    )
+  })
+
   it('preserves structured missing-resource details from a failed run', async () => {
     const body = {
       error: "Example App can't run in staging.",
@@ -108,4 +120,22 @@ describe('panel API', () => {
       body: JSON.stringify({ currentUser }),
     })
   })
+
+  it('sends an explicitly confirmed Retool preview push', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ result: {} }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createPanelApi().cliPush('/retool/checkout', 'Finish report filters', true)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/cli/push', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        checkoutDir: '/retool/checkout',
+        message: 'Finish report filters',
+        confirmed: true,
+      }),
+    })
+  })
+
 })

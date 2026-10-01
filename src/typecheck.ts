@@ -7,8 +7,8 @@ import { currentUserDeclarationSource } from './currentUser.js'
 
 export type TypecheckTarget = {
   appDir: string
-  branch: string
-  worktreePath: string
+  branch: string | null
+  worktreePath: string | null
 }
 
 export type TypecheckDiagnostic = {
@@ -31,9 +31,32 @@ export type TypecheckResult = {
 const canonical = (path: string) => realpathSync.native(resolve(path))
 
 export function resolveTypecheckTarget(input: { repoDir: string; branch: string; app: string }): TypecheckTarget {
-  if (!input.repoDir) throw new Error('no apps repository configured; pass --repo "/path/to/apps-repo"')
-  if (!input.branch) throw new Error('missing --branch')
   if (!input.app) throw new Error('missing --app')
+
+  if (!input.branch) {
+    if (!input.repoDir && !isAbsolute(input.app)) {
+      throw new Error('relative --app requires --checkout "/path/to/retool-checkout"')
+    }
+    const root = input.repoDir && !isAbsolute(input.app) ? canonical(input.repoDir) : ''
+    const candidates = isAbsolute(input.app)
+      ? [resolve(input.app)]
+      : [resolve(root, input.app), resolve(root, 'apps-v2', input.app)]
+    const candidate = candidates.find((path) => existsSync(path))
+    if (!candidate) throw new Error(`app path not found: ${input.app}`)
+    const appDir = canonical(candidate)
+    if (root) {
+      const fromRoot = relative(root, appDir)
+      if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+        throw new Error(`app path is outside the selected checkout: ${appDir}`)
+      }
+    }
+    if (!existsSync(join(appDir, 'frontend', 'App.tsx'))) {
+      throw new Error(`not a Retool React app (missing frontend/App.tsx): ${appDir}`)
+    }
+    return { appDir, branch: null, worktreePath: null }
+  }
+
+  if (!input.repoDir) throw new Error('branch validation requires --repo "/path/to/apps-repo"')
 
   const worktrees = listWorktrees(input.repoDir)
   const matches = worktrees.filter((worktree) => worktree.branch === input.branch)

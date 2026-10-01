@@ -3,7 +3,7 @@ import { afterEach, describe, it, expect } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { scanApps } from './scan.js'
+import { resolveAppDirectory, scanApps } from './scan.js'
 
 // Set RETOOL_TEST_APP to an apps-v2 app dir to exercise scan against real data.
 const APP = process.env.RETOOL_TEST_APP || ''
@@ -31,6 +31,54 @@ afterEach(() => {
 })
 
 describe('scanApps worktree targets', () => {
+  it('treats a standalone Retool CLI checkout as a runnable app source', () => {
+    const checkout = mkdtempSync(join(tmpdir(), 'local-mcp-runner-checkout-'))
+    temporaryDirectories.push(checkout)
+    mkdirSync(join(checkout, 'frontend'), { recursive: true })
+    mkdirSync(join(checkout, '.retool'), { recursive: true })
+    writeFileSync(join(checkout, 'package.json'), JSON.stringify({ retool: { app: { name: 'CLI App' } } }))
+    writeFileSync(join(checkout, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    writeFileSync(join(checkout, '.retool', 'app.json'), '{}')
+
+    const [app] = scanApps(checkout)
+
+    expect(resolveAppDirectory(checkout)).toBe(realpathSync(checkout))
+    expect(app).toMatchObject({ name: 'CLI App', path: realpathSync(checkout), branch: null })
+    expect(app.worktrees).toEqual([{
+      worktreePath: realpathSync(checkout),
+      appPath: realpathSync(checkout),
+      branch: null,
+      head: '',
+      dirty: false,
+      cliCheckout: true,
+    }])
+  })
+
+  it('keeps each cloned app scoped to its own checkout under a shared parent folder', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'local-mcp-runner-apps-root-'))
+    temporaryDirectories.push(parent)
+    for (const [id, name] of [['app-one', 'App One'], ['app-two', 'App Two']]) {
+      const checkout = join(parent, id)
+      mkdirSync(join(checkout, 'frontend'), { recursive: true })
+      mkdirSync(join(checkout, '.retool'), { recursive: true })
+      writeFileSync(join(checkout, 'package.json'), JSON.stringify({ retool: { app: { name } } }))
+      writeFileSync(join(checkout, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+      writeFileSync(join(checkout, '.retool', 'app.json'), '{}')
+    }
+
+    const apps = scanApps(parent)
+
+    expect(apps.map((app) => ({
+      name: app.name,
+      appPath: app.worktrees[0]?.appPath,
+      worktreePath: app.worktrees[0]?.worktreePath,
+      cliCheckout: app.worktrees[0]?.cliCheckout,
+    }))).toEqual([
+      { name: 'App One', appPath: realpathSync(join(parent, 'app-one')), worktreePath: realpathSync(join(parent, 'app-one')), cliCheckout: true },
+      { name: 'App Two', appPath: realpathSync(join(parent, 'app-two')), worktreePath: realpathSync(join(parent, 'app-two')), cliCheckout: true },
+    ])
+  })
+
   it('maps an app to its exact path in every registered worktree', () => {
     const parent = mkdtempSync(join(tmpdir(), 'local-mcp-runner-scan-'))
     temporaryDirectories.push(parent)

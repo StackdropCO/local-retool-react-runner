@@ -139,7 +139,11 @@ export function buildGlobals(
 ): Record<string, unknown> {
   const globals: Record<string, unknown> = {}
   validateLocalResourceBindings(map, opts.localResources ?? {})
-  const run = async (entry: ResourceEntry, codeForBinding: (binding: string) => string) => {
+  const run = async (
+    entry: ResourceEntry,
+    codeForBinding: (binding: string) => string,
+    executionOptions?: { safeRead?: boolean },
+  ) => {
     const started = Date.now()
     const ts = new Date(started).toISOString()
     const resourceNames = [entry.resourceName]
@@ -147,7 +151,9 @@ export function buildGlobals(
     for (const [index, binding] of bindings.entries()) {
       const code = codeForBinding(binding)
       try {
-        const raw = await mcp.executeResourceTs(resourceNames, code, opts.environmentName)
+        const raw = executionOptions
+          ? await mcp.executeResourceTs(resourceNames, code, opts.environmentName, executionOptions)
+          : await mcp.executeResourceTs(resourceNames, code, opts.environmentName)
         const out = opts.normalize(raw)
         const rows = (out as any)?.data
         logQuery({
@@ -193,9 +199,10 @@ export function buildGlobals(
     if (entry.kind === 'sql') {
       const proxy = {
         query: async (sql: string, params?: unknown[]) => {
-          if (!opts.writes && isWrite(sql)) throw new WriteBlockedError(sql)
+          const write = isWrite(sql)
+          if (!opts.writes && write) throw new WriteBlockedError(sql)
           if (params !== undefined && !Array.isArray(params)) throw new Error('SQL query parameters must be an array')
-          return run(entry, (binding) => buildSqlSnippet(binding, sql, params))
+          return run(entry, (binding) => buildSqlSnippet(binding, sql, params), { safeRead: !write })
         },
       }
       for (const binding of entry.sourceBindings) globals[binding] = proxy
@@ -215,7 +222,15 @@ export function buildGlobals(
         environmentName: opts.environmentName ?? 'staging',
         writes: opts.writes,
         endpoint: opts.endpoint,
-        explore: opts.explore,
+        explore: opts.explore ?? (async (code, exploreOptions) => ({
+          ran: true,
+          data: await mcp.executeResourceTs(
+            [entry.resourceName],
+            code,
+            exploreOptions.environmentName,
+            { allowMutative: exploreOptions.allowMutative, safeRead: true },
+          ),
+        })),
       })
       for (const binding of entry.sourceBindings) globals[binding] = proxy
     } else {

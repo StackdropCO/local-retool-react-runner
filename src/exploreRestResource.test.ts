@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createExploreRestResource, type ExploreRunner } from './exploreRestResource.js'
+import { DEFAULT_EXPLORE_ROWS } from './retoolExplore.js'
 
 const entry = { resourceName: 'fleet-uuid', displayName: 'Fleet 360', binding: 'fleet360' }
 
@@ -16,7 +17,7 @@ describe('createExploreRestResource', () => {
     await expect(resource.rawRequest({ method: 'get', path })).resolves.toEqual({ data: [{ uuid: 'one' }] })
     expect(explore).toHaveBeenCalledWith(
       `return await fleet360.rawRequest(${JSON.stringify({ method: 'GET', path })})`,
-      expect.objectContaining({ rows: 5000, allowMutative: true }),
+      expect.objectContaining({ rows: DEFAULT_EXPLORE_ROWS, allowMutative: true }),
     )
   })
 
