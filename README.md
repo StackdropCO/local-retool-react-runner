@@ -1,13 +1,14 @@
 # Retool React Local Runner
 
-Run a Retool React app directly from its Retool CLI checkout while backend
-queries use your authenticated Retool resources.
+Run Retool React apps locally from either a Retool CLI checkout or a protected
+Apps as Code Git repository while backend queries use authenticated Retool
+resources.
 
-The everyday workflow is CLI-first: clone or pull an app, edit and run it
-locally, validate it, then make one explicitly confirmed preview push. The
-runner never pushes on its own and cannot publish an app live. Git worktrees
-remain supported as an optional advanced workflow, but a separate Apps as Code
-repository is no longer required.
+The control panel keeps the two source workflows separate. Unprotected apps can
+be cloned, pulled, edited, run, and preview-pushed through the Retool CLI.
+Protected apps remain in Git branches and worktrees; their matching CLI checkout
+is used only as the Retool authentication and resource bridge. The runner never
+pushes Git changes on its own and cannot publish an app live.
 
 > [!NOTE]
 > Retool React Local Runner is a Stackdrop project built for Retool Apps as
@@ -31,8 +32,9 @@ repository is no longer required.
 - **App-level test execution:** run an Apps as Code app's local Vitest suite
   through the runner with `--root`, without installing Vitest in the app
   repository.
-- **Flexible local development:** standalone CLI checkouts run directly; Git
-  worktrees, when present, still get independent processes, ports, and Vite caches.
+- **Hybrid local development:** the Apps and Settings pages separate Retool CLI
+  checkouts from protected Git sources. Git worktrees get independent processes,
+  ports, and Vite caches while retaining the matching CLI resource bridge.
 - **Improved local REST support:** private OpenAPI resources remain outside the
   apps repo, are filtered to the selected app, and can be inspected, validated,
   and updated through the panel.
@@ -56,7 +58,9 @@ repository is no longer required.
 - Signs in with Retool CLI and lists available apps automatically.
 - Uses one saved parent folder and clones each app into its own UUID child folder.
 - Scans every Retool CLI checkout below that parent folder.
-- Displays Git worktree metadata when the checkout provides it.
+- Keeps separate **CLI checkouts** and **Git** tabs on both Settings and Apps.
+- Scans a protected Apps as Code repository and displays its Git worktree metadata.
+- Matches each Git app to its own CLI checkout by Retool app UUID.
 - Selects staging or production and read-only or write-enabled execution per app.
 - Confirms production launches and write access explicitly.
 - Starts, opens, monitors, and stops independent app previews.
@@ -80,11 +84,12 @@ repository is no longer required.
 
 ### CLI workflow and automation
 
-- Uses an independent `retool clone` checkout per app for source, generated
-  resource bindings, local preview, pull, and final `retool push`.
+- Uses an independent `retool clone` checkout per app for generated resource
+  bindings and Retool credentials. For CLI apps it is also the editable source;
+  for protected apps the editable source remains in Git.
 - Makes clone, pull, and preview push explicit panel actions; live publishing
   remains outside the runner.
-- Optionally validates existing Git worktrees without creating or switching them.
+- Validates existing Git worktrees without creating or switching them.
 - Typechecks an app's frontend and backend against virtual Retool hooks and
   manifest-backed resource globals.
 - Produces human-readable diagnostics or stable JSON for scripts, coding agents,
@@ -97,8 +102,9 @@ repository is no longer required.
 - Node.js 22 or newer (required by the Retool CLI).
 - pnpm 11 (`corepack enable` is recommended; this repository pins pnpm 11.5.0).
 - Retool CLI (`pnpm add --global @tryretool/cli`).
-- Git (used internally by the Retool CLI).
+- Git (used internally by the Retool CLI and as the source for protected apps).
 - Access to a Retool organization and a local parent folder for cloned apps.
+- For protected apps, access to the organization's Apps as Code Git repository.
 
 ## Quick start
 
@@ -117,11 +123,15 @@ Start the control panel:
 pnpm panel
 ```
 
-Open [http://localhost:5170](http://localhost:5170). Settings automatically
-detects the installed Retool CLI, its default authenticated host, and available
-apps. If authentication is missing or expired, sign in there; then choose one
-absolute parent folder. Every app you clone gets its own UUID child folder
-inside it. You can use the same layout directly from a terminal:
+Open [http://localhost:5170](http://localhost:5170). The shared MCP metadata
+connection appears above the two source settings and is used only to discover
+groups for the emulated current user.
+
+Under **Settings → CLI checkouts**, the panel automatically detects the installed
+Retool CLI, its default authenticated host, and available apps. If authentication
+is missing or expired, sign in there; then choose one absolute parent folder.
+Every app you clone gets its own UUID child folder inside it. You can use the
+same layout directly from a terminal:
 
 ```sh
 retool auth login --host example.retool.com
@@ -133,15 +143,24 @@ cd <app-uuid>
 pnpm install
 ```
 
-Then:
+For a CLI app:
 
-1. The panel scans every cloned app under the saved parent folder automatically.
-2. Select the environment and write mode, then run the local preview.
+1. Open **Apps → CLI checkouts**. The panel scans the saved parent folder automatically.
+2. Select the environment and write mode on the app card, then choose **Run**.
 3. Edit locally and repeat until the app is ready.
 4. Run `retool check` inside the app checkout.
 5. On that app's card, choose **Push preview**, enter a message, and confirm the push.
 
-The preview opens on its own port and watches the checkout files directly.
+For a protected Git app:
+
+1. Under **Settings → Git**, select the Apps as Code repository.
+2. Clone the same app once under **Settings → CLI checkouts** so the runner has
+   its Retool credentials and generated resource bindings.
+3. Open **Apps → Git**, select the desired existing branch or worktree, then choose **Run**.
+4. Edit, commit, and push through Git or your coding agent. The runner does not
+   perform Git pushes.
+
+Each preview opens on its own port and watches the selected source files directly.
 
 > [!WARNING]
 > A production preview uses production Retool resources. Read-only mode blocks
@@ -156,10 +175,12 @@ The control panel is the easiest way to:
 
 - Sign in with Retool CLI and list available apps.
 - Choose one local apps folder and clone apps into automatic UUID subfolders.
-- Pull an individual app's latest source from its app card.
+- Choose a separate protected Apps as Code Git repository.
+- Switch between **CLI checkouts** and **Git** on the Apps page.
+- Pull an individual CLI app's latest source from its app card.
 - Inspect resources generated in the Retool CLI checkout.
 - Scan a Retool CLI app checkout.
-- Use Git worktrees when available, without requiring them.
+- Select an existing Git branch or worktree for a protected app.
 - Choose staging or production.
 - Start, monitor, and stop app previews.
 - Push a tested checkout to a Retool preview after explicit confirmation.
@@ -245,9 +266,9 @@ configuration, a missing app, authorization failures, or missing generated resou
 
 ## Develop, validate, and push
 
-The runner handles the local interactive preview. Each app card can pull its
-checkout or perform the final preview push for its selected source; the
-equivalent terminal flow is:
+The runner handles the local interactive preview. CLI app cards can pull their
+checkout or perform an explicitly confirmed preview push; the equivalent
+terminal flow is:
 
 ```sh
 cd /absolute/path/to/retool-app
@@ -263,12 +284,16 @@ retool push --wait -m "Finish report filters"
 `retool push` validates locally before sending changes and creates a Retool
 preview build. The runner intentionally has no `retool publish` endpoint or UI;
 live publishing must be handled separately by you or your development agent.
+Git app cards intentionally have no Retool pull or preview-push actions. Commit
+and push those source changes through Git, then use the organization's normal
+protected-app release flow.
 
-## Optional Git worktrees
+## Protected Git sources and worktrees
 
-The panel discovers worktrees through `git worktree list`. It does not infer a
-branch from a directory name, create worktrees, check out branches, pull, reset,
-or switch files behind your back.
+The Git source tab scans the configured Apps as Code repository. The panel
+discovers worktrees through `git worktree list`; it does not infer a branch from
+a directory name, create worktrees, check out branches, pull, reset, commit, or
+push files behind your back.
 
 Create the task worktree with Git or your coding agent first, then select that
 same path in the panel. The panel shows its path, branch, commit, and local
@@ -278,7 +303,10 @@ instead of silently attaching to different code.
 Each worktree gets an independent runner process and port, so several branches
 can be previewed concurrently. From the CLI, pass the app path inside the target
 worktree. `--branch <name>` validates that existing worktree; it does not create
-or switch one.
+or switch one. At preview startup, the runner reads the app UUID and selects
+only the CLI checkout with that same UUID. If no match exists, the panel asks
+you to clone that app under **Settings → CLI checkouts** rather than borrowing
+another app's generated resources.
 
 ## Environments and write mode
 
@@ -387,7 +415,8 @@ credentials. The active preview does not read this runner's legacy MCP cache.
 The following local data is excluded from Git by this repository:
 
 - `.mcp-auth/` — legacy, currently inactive MCP credentials.
-- `config.json` — the saved local apps parent folder and most recent CLI checkout.
+- `config.json` — the saved CLI parent, Git repository, current user, MCP URL,
+  and most recent CLI checkout.
 - `logs/` — resource query history.
 - `.local-resources/` — private OpenAPI definitions and local base URLs.
 
