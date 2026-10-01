@@ -17,7 +17,7 @@ function DialogContent({ className, children, ...props }: ComponentProps<typeof 
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 grid max-h-[85vh] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-xl border bg-background p-5 shadow-xl outline-none',
+          'fixed left-1/2 top-1/2 z-50 grid max-h-[85vh] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-xl border bg-card p-5 shadow-xl outline-none',
           className,
         )}
         {...props}

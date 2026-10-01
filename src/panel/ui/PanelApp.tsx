@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Input } from './components/ui/input'
 import { Button } from './components/ui/button'
 import { panelApi, type PanelApi } from './lib/api'
-import type { CurrentUser, PanelStatus, RunningApp, RunInput, ScannedApp } from './lib/types'
+import type { CurrentUser, PanelStatus, Resource, RunningApp, RunInput, ScannedApp } from './lib/types'
 
 type PanelAppProps = {
   api?: PanelApi
@@ -26,9 +26,14 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
   const [running, setRunning] = useState<RunningApp[]>([])
   const [runningError, setRunningError] = useState('')
   const [runningLoading, setRunningLoading] = useState(true)
+  const [resources, setResources] = useState<Resource[] | null>(null)
+  const [resourcesError, setResourcesError] = useState('')
+  const [resourcesLoading, setResourcesLoading] = useState(true)
   const [appsBySource, setAppsBySource] = useState<Record<'cli' | 'git', ScannedApp[] | null>>({ cli: null, git: null })
   const [appSourceMode, setAppSourceMode] = useState<'cli' | 'git' | null>(null)
-  const [resourceCount, setResourceCount] = useState<number | null>(null)
+  const [activeSection, setActiveSection] = useState('apps')
+  const [settingsSource, setSettingsSource] = useState<'cli-source' | 'git-source'>('cli-source')
+  const [currentUserOpen, setCurrentUserOpen] = useState(false)
   const [appQuery, setAppQuery] = useState('')
   const [appView, setAppView] = useState<'all' | 'running' | 'recent'>('all')
   const [rescanning, setRescanning] = useState(false)
@@ -63,6 +68,18 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
     }
   }, [api])
 
+  const refreshResources = useCallback(async () => {
+    setResourcesError('')
+    setResourcesLoading(true)
+    try {
+      setResources((await api.resources()).resources)
+    } catch (cause) {
+      setResourcesError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setResourcesLoading(false)
+    }
+  }, [api])
+
   const scan = useCallback(async (repoDir: string, sourceMode: 'cli' | 'git') => {
     const result = await api.scan(repoDir, sourceMode)
     setAppsBySource((current) => ({ ...current, [result.sourceMode]: result.apps }))
@@ -76,11 +93,8 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
   }, [api])
 
   useEffect(() => {
-    void Promise.all([refreshStatus(), refreshRunning()])
-    void api.resources()
-      .then(({ resources }) => setResourceCount(resources.length))
-      .catch(() => setResourceCount(null))
-  }, [refreshStatus, refreshRunning])
+    void Promise.all([refreshStatus(), refreshRunning(), refreshResources()])
+  }, [refreshStatus, refreshRunning, refreshResources])
 
   useEffect(() => {
     const repoDir = activeAppsRoot
@@ -180,21 +194,29 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
 
   return (
     <div className="min-h-screen">
-      <AppHeader status={status} runningCount={running.length} loading={statusLoading} />
-      <Tabs defaultValue="apps">
-        <div className="border-b bg-card">
-          <div className="mx-auto max-w-[1480px] px-4 sm:px-6">
-            <TabsList aria-label="Dashboard sections" className="flex h-12 w-full rounded-none bg-transparent p-0">
-              <TabsTrigger value="apps" className="h-11 rounded-none border-b-2 border-transparent px-0 font-mono text-[10px] tracking-[0.04em] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+      <AppHeader
+        status={status}
+        runningCount={running.length}
+        loading={statusLoading}
+        onEditCurrentUser={() => {
+          setActiveSection('settings')
+          setCurrentUserOpen(true)
+        }}
+      />
+      <Tabs value={activeSection} onValueChange={setActiveSection}>
+        <div className="border-b bg-card/75 backdrop-blur-sm">
+          <div className="mx-auto max-w-[1480px] px-4 py-2 sm:px-6">
+            <TabsList aria-label="Dashboard sections" className="flex h-10 w-full rounded-xl bg-muted/70 p-1">
+              <TabsTrigger value="apps" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
                 Apps <span className="ml-1.5">{apps?.length ?? 0}</span>
               </TabsTrigger>
-              <TabsTrigger value="resources" className="ml-7 h-11 rounded-none border-b-2 border-transparent px-0 font-mono text-[10px] tracking-[0.04em] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
-                Resources{resourceCount !== null ? <span className="ml-1.5">{resourceCount}</span> : null}
+              <TabsTrigger value="resources" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
+                Resources{resources !== null ? <span className="ml-1.5">{resources.length}</span> : null}
               </TabsTrigger>
-              <TabsTrigger value="local-resources" className="ml-7 h-11 rounded-none border-b-2 border-transparent px-0 font-mono text-[10px] tracking-[0.04em] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              <TabsTrigger value="local-resources" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
                 Local API specs <span className="ml-1.5">{status?.localResources?.length ?? 0}</span>
               </TabsTrigger>
-              <TabsTrigger value="settings" className="ml-auto h-11 rounded-none border-b-2 border-transparent px-0 font-mono text-[10px] tracking-[0.04em] data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              <TabsTrigger value="settings" className="ml-auto h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
                 Settings
               </TabsTrigger>
             </TabsList>
@@ -230,29 +252,29 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                   </Alert>
                 )}
                 {(apps !== null || activeAppsRoot) && (
-                  <div className="flex flex-col gap-2 border-y bg-card p-2 sm:flex-row">
+                  <div className="flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm sm:flex-row">
                     <Input
                       aria-label="Filter apps"
                       placeholder="Filter apps…"
                       value={appQuery}
                       onChange={(event) => setAppQuery(event.target.value)}
-                      className="h-10 rounded-none shadow-none"
+                      className="h-10 shadow-none"
                     />
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-10 rounded-none shadow-none"
+                      className="h-10 shadow-none"
                       disabled={!activeAppsRoot || rescanning}
                       onClick={() => void rescan()}
                     >
                       {rescanning ? 'Rescanning…' : 'Rescan'}
                     </Button>
-                    <div className="flex shrink-0" role="group" aria-label="App view">
+                    <div className="flex shrink-0 gap-1 rounded-lg bg-muted p-1" role="group" aria-label="App view">
                       {(['all', 'running', 'recent'] as const).map((view) => (
                         <button
                           key={view}
                           type="button"
-                          className={`min-w-20 px-4 font-mono text-[10px] capitalize tracking-[0.04em] transition-colors ${appView === view ? 'bg-muted font-semibold text-primary' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+                          className={`min-w-20 rounded-md px-4 font-mono text-xs capitalize tracking-[0.04em] transition-colors ${appView === view ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-card/70 hover:text-foreground'}`}
                           aria-pressed={appView === view}
                           onClick={() => setAppView(view)}
                         >
@@ -262,7 +284,20 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                     </div>
                   </div>
                 )}
-                <DiscoveredApps apps={visibleApps} onRun={run} onPull={pull} onPush={push} emptyMessage={emptyAppsMessage} />
+                <DiscoveredApps
+                  apps={visibleApps}
+                  loading={apps === null && Boolean(activeAppsRoot)}
+                  configured={Boolean(activeAppsRoot)}
+                  sourceMode={activeSourceMode}
+                  onConfigure={(sourceMode) => {
+                    setSettingsSource(sourceMode === 'cli' ? 'cli-source' : 'git-source')
+                    setActiveSection('settings')
+                  }}
+                  onRun={run}
+                  onPull={pull}
+                  onPush={push}
+                  emptyMessage={emptyAppsMessage}
+                />
               </div>
               <div className="space-y-4">
                 <RunningApps
@@ -271,19 +306,18 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                   error={runningError}
                   onStop={stop}
                 />
-                <CurrentUserCard
-                  currentUser={status?.currentUser ?? null}
-                  groupMode={useMcpGroups ? 'directory' : 'manual'}
-                  loadGroups={async () => (await api.groups()).groups}
-                  onSave={saveCurrentUser}
-                />
               </div>
             </div>
           </TabsContent>
 
           <TabsContent value="resources" className="mt-0">
             <div className="max-w-5xl">
-              <ResourceCard api={api} />
+              <ResourceCard
+                resources={resources}
+                loading={resourcesLoading}
+                error={resourcesError}
+                onRefresh={refreshResources}
+              />
             </div>
           </TabsContent>
 
@@ -294,34 +328,46 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">
-            <div className="space-y-4">
-              <ConnectionCard status={status} onSave={saveMcpUrl} onAuthorize={authorizeMcp} />
-              <Tabs defaultValue="cli-source">
-                <TabsList aria-label="App source type">
-                  <TabsTrigger value="cli-source">CLI checkouts</TabsTrigger>
-                  <TabsTrigger value="git-source">Git</TabsTrigger>
-                </TabsList>
-                <TabsContent value="cli-source">
-                  <RetoolCliCard
-                    api={api}
-                    appsRootDir={status?.cliAppsDir || ''}
-                    onAppsRootReady={async (appsRootDir) => {
-                      await scan(appsRootDir, 'cli')
-                      await refreshStatus()
-                    }}
-                  />
-                </TabsContent>
-                <TabsContent value="git-source">
-                  <RepositoryCard
-                    api={api}
-                    initialRepoDir={status?.gitRepoDir || ''}
-                    onScan={async (gitRepoDir) => {
-                      await scan(gitRepoDir, 'git')
-                      await refreshStatus()
-                    }}
-                  />
-                </TabsContent>
-              </Tabs>
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-4">
+                <ConnectionCard status={status} onSave={saveMcpUrl} onAuthorize={authorizeMcp} />
+                <Tabs value={settingsSource} onValueChange={(value) => setSettingsSource(value as 'cli-source' | 'git-source')}>
+                  <TabsList aria-label="App source type">
+                    <TabsTrigger value="cli-source">CLI checkouts</TabsTrigger>
+                    <TabsTrigger value="git-source">Git</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="cli-source">
+                    <RetoolCliCard
+                      api={api}
+                      appsRootDir={status?.cliAppsDir || ''}
+                      onAppsRootReady={async (appsRootDir) => {
+                        await scan(appsRootDir, 'cli')
+                        await refreshStatus()
+                      }}
+                    />
+                  </TabsContent>
+                  <TabsContent value="git-source">
+                    <RepositoryCard
+                      api={api}
+                      initialRepoDir={status?.gitRepoDir || ''}
+                      onScan={async (gitRepoDir) => {
+                        await scan(gitRepoDir, 'git')
+                        await refreshStatus()
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
+              <div className="xl:sticky xl:top-5">
+                <CurrentUserCard
+                  currentUser={status?.currentUser ?? null}
+                  groupMode={useMcpGroups ? 'directory' : 'manual'}
+                  loadGroups={async () => (await api.groups()).groups}
+                  onSave={saveCurrentUser}
+                  open={currentUserOpen}
+                  onOpenChange={setCurrentUserOpen}
+                />
+              </div>
             </div>
           </TabsContent>
 

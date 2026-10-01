@@ -139,7 +139,7 @@ export function RetoolCliCard({ api, appsRootDir, onAppsRootReady }: Props) {
           <Button variant="outline" disabled={!!busy} onClick={() => void login()}>{busy === 'login' ? 'Signing in…' : authenticated ? 'Re-authenticate' : 'Sign in'}</Button>
           <Button variant="outline" disabled={!!busy || !authenticated} onClick={() => void loadApps()}>{busy === 'apps' ? 'Loading…' : 'Load apps'}</Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
           {statusLoading
             ? 'Detecting the installed Retool CLI and its authentication…'
             : authenticated
@@ -171,7 +171,7 @@ export function RetoolCliCard({ api, appsRootDir, onAppsRootReady }: Props) {
               <p className="text-xs text-muted-foreground">Choose an app. Retool CLI creates its child folder automatically; branch is optional.</p>
             </div>
             <div className="grid gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto]">
-              <select aria-label="Retool app" value={appId} onChange={(event) => setAppId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2.5 text-xs">
+              <select aria-label="Retool app" value={appId} onChange={(event) => setAppId(event.target.value)} className="h-9 rounded-md border border-input bg-control px-2.5 text-xs">
                 {apps.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
               <Input aria-label="Retool branch" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="Existing branch (optional)" className="mono text-xs" />
@@ -186,7 +186,7 @@ export function RetoolCliCard({ api, appsRootDir, onAppsRootReady }: Props) {
         {!parentDir && <p className="text-xs text-muted-foreground">Choose the parent folder where this runner should keep your local Retool apps.</p>}
         <p className="text-xs text-muted-foreground">The runner can create preview builds, but it never publishes an app live.</p>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-        {output && <Alert><AlertDescription>{output}</AlertDescription></Alert>}
+        {output && <Alert role="status"><AlertDescription>{output}</AlertDescription></Alert>}
       </CardContent>
       <DirectoryBrowser
         api={api}

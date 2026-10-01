@@ -1,28 +1,17 @@
-import { useState } from 'react'
-import type { PanelApi } from '../lib/api'
 import type { Resource } from '../lib/types'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 
-export function ResourceCard({ api }: { api: PanelApi }) {
-  const [resources, setResources] = useState<Resource[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+type ResourceCardProps = {
+  resources: Resource[] | null
+  loading: boolean
+  error: string
+  onRefresh(): Promise<void>
+}
 
-  const load = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      setResources((await api.resources()).resources)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setLoading(false)
-    }
-  }
-
+export function ResourceCard({ resources, loading, error, onRefresh }: ResourceCardProps) {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -30,8 +19,8 @@ export function ResourceCard({ api }: { api: PanelApi }) {
           Resources
           {resources ? <span className="font-normal text-muted-foreground"> ({resources.length})</span> : null}
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-          {loading ? 'Loading…' : resources ? 'Refresh' : 'Load'}
+        <Button variant="outline" size="sm" onClick={() => void onRefresh()} disabled={loading}>
+          {loading ? 'Loading…' : 'Refresh'}
         </Button>
       </CardHeader>
       <CardContent>
@@ -40,7 +29,7 @@ export function ResourceCard({ api }: { api: PanelApi }) {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        {!error && resources === null && <p className="text-xs text-muted-foreground">Not loaded.</p>}
+        {!error && resources === null && <p className="text-sm text-muted-foreground" role="status">Loading resources…</p>}
         {!error && resources?.length === 0 && <p className="text-xs text-muted-foreground">None returned.</p>}
         {resources && resources.length > 0 && (
           <Table>

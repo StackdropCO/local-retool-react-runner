@@ -20,6 +20,8 @@ type CurrentUserCardProps = {
   groupMode: 'directory' | 'manual'
   loadGroups(): Promise<RetoolGroup[]>
   onSave(currentUser: CurrentUser): Promise<void>
+  open?: boolean
+  onOpenChange?(open: boolean): void
 }
 
 const copyUser = (user: CurrentUser): CurrentUser => ({
@@ -28,8 +30,13 @@ const copyUser = (user: CurrentUser): CurrentUser => ({
   metadata: { ...user.metadata },
 })
 
-export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: CurrentUserCardProps) {
-  const [open, setOpen] = useState(false)
+export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave, open, onOpenChange }: CurrentUserCardProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const editorOpen = open ?? internalOpen
+  const setEditorOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next)
+    else setInternalOpen(next)
+  }
   const [draft, setDraft] = useState<CurrentUser | null>(null)
   const [metadata, setMetadata] = useState('{}')
   const [availableGroups, setAvailableGroups] = useState<RetoolGroup[] | null>(null)
@@ -38,7 +45,7 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!open || !currentUser) return
+    if (!editorOpen || !currentUser) return
     setDraft(copyUser(currentUser))
     setMetadata(JSON.stringify(currentUser.metadata, null, 2))
     setError('')
@@ -48,7 +55,7 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
     void loadGroups()
       .then((groups) => setAvailableGroups(groups))
       .catch((cause) => setGroupsError(cause instanceof Error ? cause.message : String(cause)))
-  }, [open, currentUser, groupMode])
+  }, [editorOpen, currentUser, groupMode])
 
   const field = <Key extends keyof CurrentUser>(key: Key, value: CurrentUser[Key]) => {
     setDraft((current) => current ? { ...current, [key]: value } : current)
@@ -96,7 +103,7 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
         throw new Error('Metadata must be a JSON object')
       }
       await onSave({ ...draft, metadata: parsedMetadata })
-      setOpen(false)
+      setEditorOpen(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -109,7 +116,7 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Emulated current user</CardTitle>
-          <Button variant="outline" size="sm" disabled={!currentUser} onClick={() => setOpen(true)}>
+          <Button variant="outline" size="sm" disabled={!currentUser} onClick={() => setEditorOpen(true)}>
             Edit emulated user
           </Button>
         </CardHeader>
@@ -138,15 +145,16 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={(next) => { if (!saving) setOpen(next) }}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <Dialog open={editorOpen} onOpenChange={(next) => { if (!saving) setEditorOpen(next) }}>
+        <DialogContent className="max-h-[90vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Mimic a Retool user</DialogTitle>
             <DialogDescription>Set the identity and groups exposed to the local app.</DialogDescription>
           </DialogHeader>
-          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-          {draft && (
-            <div className="space-y-5">
+          <div className="min-h-0 overflow-y-auto pr-1">
+            {error && <Alert className="mb-4" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+            {draft && (
+              <div className="space-y-5">
               <section className="grid gap-3 sm:grid-cols-2">
                 <LabeledInput label="Email" value={draft.email} type="email" onChange={(value) => field('email', value)} />
                 <LabeledInput label="User ID" value={String(draft.id)} type="number" onChange={(value) => field('id', Number(value))} />
@@ -211,8 +219,9 @@ export function CurrentUserCard({ currentUser, groupMode, loadGroups, onSave }: 
                   className="mono min-h-24 w-full resize-y rounded-md border border-input bg-background p-3 text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </section>
-            </div>
-          )}
+              </div>
+            )}
+          </div>
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="outline" disabled={saving}>Cancel</Button></DialogClose>
             <Button type="button" onClick={() => void save()} disabled={saving || !draft}>

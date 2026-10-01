@@ -141,7 +141,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
   }
 
   return (
-    <div className="border-b px-5 py-4 last:border-b-0">
+    <div className="rounded-xl border bg-card px-5 py-4 shadow-[0_1px_2px_rgba(30,41,59,0.04),0_5px_18px_rgba(30,41,59,0.035)] transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -157,7 +157,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
             {app.endpoints.length} endpoint{app.endpoints.length === 1 ? '' : 's'}
             {` · ${resourceSummary}`}
           </p>
-          <p className="mono mt-1 truncate text-[11px] text-muted-foreground/75" title={app.path}>
+          <p className="mono mt-1 truncate text-xs text-muted-foreground" title={app.path}>
             {app.path}
           </p>
         </div>
@@ -206,7 +206,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
             title={selectedWorktree?.worktreePath}
             value={worktreePath}
             onChange={(event) => setWorktreePath(event.target.value)}
-            className="mono h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+            className="mono h-9 w-full rounded-md border border-input bg-control px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
           >
             {worktrees.length ? (
               worktrees.map((item) => (
@@ -230,7 +230,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
             aria-label={`Environment for ${app.name}`}
             value={environment}
             onChange={(event) => setEnvironment(event.target.value as 'staging' | 'production')}
-            className={`mono h-9 w-full rounded-md border bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring ${
+            className={`mono h-9 w-full rounded-md border bg-control px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring ${
               environment === 'production' ? 'border-destructive text-destructive' : 'border-input'
             }`}
           >
@@ -243,7 +243,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
           <span className="block text-xs font-semibold text-muted-foreground">
             Access
           </span>
-          <label className="flex h-9 min-w-32 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground">
+          <label className="flex h-9 min-w-32 items-center gap-2 rounded-md border border-input bg-control px-2.5 text-xs text-muted-foreground">
             <Switch
               aria-label={`Enable writes for ${app.name}`}
               checked={writes}
@@ -278,9 +278,9 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
           </AlertDescription>
         </Alert>
       )}
-      {pushResult && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs">{pushResult}</pre>}
+      {pushResult && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs" role="status">{pushResult}</pre>}
       {previewUrl && (
-        <Alert className="mt-2">
+        <Alert className="mt-2" role="status">
           <AlertDescription>
             Preview ready.{' '}
             <a href={previewUrl} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">Open preview</a>

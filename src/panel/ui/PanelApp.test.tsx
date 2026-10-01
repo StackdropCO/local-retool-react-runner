@@ -129,6 +129,26 @@ describe('PanelApp', () => {
     expect(api.running).toHaveBeenCalledOnce()
   })
 
+  it('routes an unconfigured app source directly to the matching setup', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    const configuredStatus = await api.status()
+    api.status = vi.fn(async () => ({
+      ...configuredStatus,
+      repoDir: '',
+      cliAppsDir: '',
+      gitRepoDir: '',
+      sourceMode: 'cli' as const,
+    }))
+
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Configure CLI source' }))
+    expect(screen.getByRole('tabpanel', { name: 'Settings' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'CLI checkouts' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('heading', { name: 'Retool CLI connection and source' })).toBeInTheDocument()
+  })
+
   it('lists and clones a Retool app from Settings', async () => {
     const user = userEvent.setup()
     const api = fakeApi()
@@ -242,6 +262,7 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
     expect(await screen.findByText('Dev User')).toBeInTheDocument()
     expect(screen.getByText('Analytics viewers')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
@@ -253,6 +274,17 @@ describe('PanelApp', () => {
     await waitFor(() => expect(api.saveCurrentUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'other@example.com' }),
     ))
+  })
+
+  it('opens the emulated user editor directly from the persistent header control', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit emulated user, currently Dev User' }))
+
+    expect(screen.getByRole('tabpanel', { name: 'Settings' })).toHaveAttribute('data-state', 'active')
+    expect(await screen.findByRole('dialog', { name: 'Mimic a Retool user' })).toBeInTheDocument()
   })
 
   it('uses CLI identity and manual group editing when MCP is not configured', async () => {
@@ -271,6 +303,7 @@ describe('PanelApp', () => {
     }))
     render(<PanelApp api={api} />)
 
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
     expect(await screen.findByText('CLI User')).toBeInTheDocument()
     expect(api.syncCurrentUserFromCli).toHaveBeenCalledOnce()
     await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
@@ -297,6 +330,7 @@ describe('PanelApp', () => {
     }))
     render(<PanelApp api={api} />)
 
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
     expect(await screen.findByText('Dev User')).toBeInTheDocument()
     expect(api.syncCurrentUserFromCli).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
@@ -410,7 +444,6 @@ describe('PanelApp', () => {
     render(<PanelApp api={api} />)
 
     await user.click(screen.getByRole('tab', { name: /^Resources/ }))
-    await user.click(await screen.findByRole('button', { name: 'Load' }))
 
     expect(await screen.findByText('local — upload.openapi.yaml · #1234567890ab')).toBeInTheDocument()
   })

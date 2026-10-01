@@ -18,38 +18,40 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-control: var(--control);
   --color-ring: var(--ring);
-  --radius-sm: 2px;
-  --radius-md: 3px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
   --radius-lg: var(--radius);
-  --radius-xl: 5px;
+  --radius-xl: 16px;
 }
 
 :root {
   color-scheme: light;
   /* System UI stack — no webfont. Reads like a tool, not a landing page. */
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --radius: 4px;
+  --radius: 12px;
 
-  /* Neutral greys (no blue tint) + one real navy accent. */
-  --background: #f6f7f8;
-  --foreground: #16191d;
+  /* Warm cream canvas, crisp white surfaces, and a confident navy accent. */
+  --background: #efeee9;
+  --foreground: #252238;
   --card: #ffffff;
   --card-foreground: var(--foreground);
   --popover: #ffffff;
   --popover-foreground: var(--foreground);
-  --primary: #14284b;
+  --primary: #1a1830;
   --primary-foreground: #ffffff;
-  --secondary: #eef0f2;
-  --secondary-foreground: #33383f;
-  --muted: #eef0f2;
-  --muted-foreground: #666e78;
-  --accent: #e9ecf1;
-  --accent-foreground: #14284b;
-  --border: #dfe2e6;
+  --secondary: #e8e7ef;
+  --secondary-foreground: #1a1830;
+  --muted: #e8e7e2;
+  --muted-foreground: #666577;
+  --accent: #e8e7ef;
+  --accent-foreground: #1a1830;
+  --border: #d8d6d0;
   --input: var(--border);
-  --ring: #14284b;
-  --destructive: #b3261e;
+  --control: #f8f7f4;
+  --ring: #514d72;
+  --destructive: #c2413b;
 }
 
 * {
@@ -61,6 +63,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background: var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-synthesis: none;
 }
