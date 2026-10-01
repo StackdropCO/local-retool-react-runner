@@ -99,7 +99,7 @@ pushes Git changes on its own and cannot publish an app live.
 
 ## Requirements
 
-- Node.js 22 or newer (required by the Retool CLI).
+- Node.js 22.13 or newer (required by pnpm 11.5 and the Retool CLI).
 - pnpm 11 (`corepack enable` is recommended; this repository pins pnpm 11.5.0).
 - Retool CLI (`pnpm add --global @tryretool/cli`).
 - Git (used internally by the Retool CLI and as the source for protected apps).
@@ -134,9 +134,15 @@ Clone and install the runner:
 ```sh
 git clone https://github.com/StackdropCO/local-retool-react-runner.git
 cd local-retool-react-runner
+# If you use nvm, this installs and selects the version pinned in .nvmrc.
+nvm install
+nvm use
 corepack enable
 pnpm install
 ```
+
+If you do not use nvm, confirm that `node --version` reports v22.13 or newer
+before running `corepack enable`. pnpm 11.5 cannot start on Node 20.
 
 Start the control panel:
 
