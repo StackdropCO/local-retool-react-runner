@@ -11,6 +11,9 @@
     "./test-resources": "./src/testResources.ts"
   },
   "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "test": "vitest run",
     "test:live": "vitest run --config vitest.config.live.ts",
