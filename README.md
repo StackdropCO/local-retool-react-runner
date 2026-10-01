@@ -106,6 +106,27 @@ pushes Git changes on its own and cannot publish an app live.
 - Access to a Retool organization and a local parent folder for cloned apps.
 - For protected apps, access to the organization's Apps as Code Git repository.
 
+## Two development paths
+
+Choose the path based on whether Retool protects the app with an Apps as Code
+Git repository. The paths share the same local runtime, environment controls,
+emulated user, and resource safety checks, but they have different sources of
+truth and delivery steps.
+
+| | CLI checkout | Protected Git app |
+| --- | --- | --- |
+| Use for | Apps developed directly through Retool CLI | Apps whose source is managed in Apps as Code Git |
+| Source of truth | The folder created by `retool clone` | The selected Git branch or worktree |
+| Panel view | **Apps → CLI checkouts** | **Apps → Git** |
+| Retool bridge | The same CLI checkout | A separate CLI checkout with the same Retool app UUID |
+| Get remote changes | **Pull** on the app card or `retool pull` | Git pull/fetch through your terminal or coding agent |
+| Deliver changes | **Push preview** or `retool push`; never live publish | Commit and push through Git; follow the protected-app release process |
+
+In both paths, **Run** starts a local preview from the selected source. For a Git
+app, the CLI checkout is not editable source and is never substituted for the
+selected branch; it supplies only Retool-generated platform files, resource
+bindings, and authenticated resource access.
+
 ## Quick start
 
 Clone and install the runner:
