@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw, Search } from 'lucide-react'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { AppHeader } from './components/app-header'
 import { DiscoveredApps } from './components/discovered-apps'
@@ -230,7 +231,7 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
           </Alert>
         )}
           <TabsContent value="apps" className="mt-0">
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
               <div className="min-w-0 space-y-4">
                 <Tabs
                   value={activeSourceMode}
@@ -252,29 +253,33 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                   </Alert>
                 )}
                 {(apps !== null || activeAppsRoot) && (
-                  <div className="flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm sm:flex-row">
-                    <Input
-                      aria-label="Filter apps"
-                      placeholder="Filter apps…"
-                      value={appQuery}
-                      onChange={(event) => setAppQuery(event.target.value)}
-                      className="h-10 shadow-none"
-                    />
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(18rem,1fr)_auto_auto]">
+                    <div className="relative min-w-0">
+                      <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        aria-label="Filter apps"
+                        placeholder="Search apps, resources, or paths…"
+                        value={appQuery}
+                        onChange={(event) => setAppQuery(event.target.value)}
+                        className="h-11 bg-card pl-10 shadow-sm"
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-10 shadow-none"
+                      className="h-11"
                       disabled={!activeAppsRoot || rescanning}
                       onClick={() => void rescan()}
                     >
+                      <RefreshCw className={rescanning ? 'animate-spin' : ''} aria-hidden="true" />
                       {rescanning ? 'Rescanning…' : 'Rescan'}
                     </Button>
-                    <div className="flex shrink-0 gap-1 rounded-lg bg-muted p-1" role="group" aria-label="App view">
+                    <div className="flex h-11 shrink-0 gap-1 rounded-xl border bg-card p-1 shadow-sm sm:col-span-2 lg:col-span-1" role="group" aria-label="App view">
                       {(['all', 'running', 'recent'] as const).map((view) => (
                         <button
                           key={view}
                           type="button"
-                          className={`min-w-20 rounded-md px-4 font-mono text-xs capitalize tracking-[0.04em] transition-colors ${appView === view ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-card/70 hover:text-foreground'}`}
+                          className={`min-w-20 flex-1 rounded-lg px-4 text-sm capitalize transition-colors ${appView === view ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                           aria-pressed={appView === view}
                           onClick={() => setAppView(view)}
                         >
