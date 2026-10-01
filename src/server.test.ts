@@ -28,6 +28,20 @@ describe.skipIf(!APP || !existsSync(join(APP, 'backend')))('discoverEndpoints (s
   })
 })
 
+describe('discoverEndpoints', () => {
+  it('ignores TypeScript declarations even when they contain a default export', () => {
+    const root = mkdtempSync(join(tmpdir(), 'runner-endpoints-'))
+    try {
+      mkdirSync(join(root, 'backend'), { recursive: true })
+      writeFileSync(join(root, 'backend', 'load.ts'), 'export default async function load() {}')
+      writeFileSync(join(root, 'backend', '_client.d.ts'), 'export default interface Client {}')
+      expect(discoverEndpoints(root)).toEqual(['load'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 const resources: ResourceMap = {
   databaseId: {
     resourceName: 'databaseId',

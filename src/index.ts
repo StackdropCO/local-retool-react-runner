@@ -5,6 +5,7 @@ import { connectRetoolCli } from './cliClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
 import { repoRoot, validateWorktreeTarget } from './git.js'
+import { resolveAppDirectory } from './scan.js'
 import { parseRetoolEnvironment } from './environment.js'
 import { resolveCurrentUser } from './currentUser.js'
 
@@ -16,12 +17,19 @@ const has = (name: string) => process.argv.includes(`--${name}`)
 
 async function main() {
   const config = readConfig()
-  let appDir = arg('app', '')!
+  const requestedApp = arg('app', '')!
   const port = Number(arg('port', '5174'))
   const writes = has('writes')
   const environmentName = parseRetoolEnvironment(arg('environment', 'staging'))
   const branch = arg('branch', '')!
-  const exploreCheckoutDir = arg('explore-checkout', config.exploreCheckoutDir || '')!
+  const exploreCheckoutDir = arg('checkout', arg('explore-checkout', config.exploreCheckoutDir || ''))!
+  let appDir = requestedApp
+  try {
+    appDir = resolveAppDirectory(exploreCheckoutDir, requestedApp)
+  } catch (error) {
+    console.error(`[runner] ${String((error as Error)?.message ?? error)}`)
+    process.exit(1)
+  }
   if (branch && appDir) {
     const worktreePath = repoRoot(appDir)
     if (!worktreePath) throw new Error(`app is not inside a Git worktree: ${appDir}`)
@@ -31,12 +39,12 @@ async function main() {
   if (!appDir || !existsSync(join(appDir, 'frontend', 'App.tsx'))) {
     console.error(
       `[runner] no app found${appDir ? ` at:\n  ${appDir}` : ' (no --app given)'}\n` +
-        `Pass --app "/abs/path/to/an/apps-v2/app", or use the panel: pnpm panel`,
+        `Pass --checkout "/path/to/retool-checkout" and optionally --app "Group/App", or use the panel: pnpm panel`,
     )
     process.exit(1)
   }
   if (!exploreCheckoutDir) {
-    console.error('[runner] no Retool CLI checkout. Pass --explore-checkout "/abs/path/to/retool-clone" or configure exploreCheckoutDir.')
+    console.error('[runner] no Retool CLI checkout. Pass --checkout "/abs/path/to/retool-clone" or configure exploreCheckoutDir.')
     process.exit(1)
   }
   console.log(`[runner] app=${appDir}`)

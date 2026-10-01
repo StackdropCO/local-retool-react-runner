@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer as createNetServer } from 'node:net'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, dirname, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,9 +10,10 @@ import express from 'express'
 import { createServer as createViteServer } from 'vite'
 import { TOOL_ROOT, MCP_URL } from '../paths.js'
 import { connectRetoolCli } from '../cliClient.js'
-import { scanApps } from '../scan.js'
-import { readConfig, writeConfig } from '../config.js'
-import { validateWorktreeTarget } from '../git.js'
+import { connectMcp, hasCachedAuth, type RetoolGroup } from '../mcpClient.js'
+import { findAppDirs, scanApps, validateDirectoryTarget } from '../scan.js'
+import { readConfig, writeConfig, type Config } from '../config.js'
+import { repoRoot, validateWorktreeTarget } from '../git.js'
 import { loadLocalResourceDefinitions, loadLocalResourceEntries } from '../localResourceConfig.js'
 import { readLocalResourceSpec, saveLocalResourceSpec } from '../localResourceSpecStore.js'
 import { parseRetoolEnvironment, type RetoolEnvironment } from '../environment.js'
@@ -23,6 +24,106 @@ import { parseCurrentUser, resolveCurrentUser } from '../currentUser.js'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
 let panelInstanceId = 0
+
+export type RetoolCliResult = { stdout: string; stderr: string }
+export type RetoolCliRunner = (args: string[], options?: { cwd?: string; timeoutMs?: number }) => Promise<RetoolCliResult>
+export type CheckoutInstaller = (checkoutDir: string) => Promise<void>
+
+export const runRetoolCli: RetoolCliRunner = (args, options = {}) => new Promise((resolve, reject) => {
+  const child = spawn('retool', args, {
+    cwd: options.cwd,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  const append = (current: string, chunk: Buffer) => (current + chunk.toString()).slice(-2_000_000)
+  child.stdout.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk) })
+  child.stderr.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk) })
+  const timeoutMs = options.timeoutMs ?? 300_000
+  const timeout = setTimeout(() => {
+    child.kill('SIGTERM')
+    reject(new Error(`Retool CLI timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
+  child.once('error', (error) => {
+    clearTimeout(timeout)
+    reject(error)
+  })
+  child.once('exit', (code) => {
+    clearTimeout(timeout)
+    if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() })
+    else reject(new Error((stderr || stdout || `Retool CLI exited with code ${code}`).trim()))
+  })
+})
+
+export const installCheckoutDependencies: CheckoutInstaller = (checkoutDir) => new Promise((resolve, reject) => {
+  const child = spawn('pnpm', ['install'], {
+    cwd: checkoutDir,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  const append = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-20_000) }
+  child.stdout.on('data', append)
+  child.stderr.on('data', append)
+  child.once('error', reject)
+  child.once('exit', (code) => {
+    if (code === 0) resolve()
+    else reject(new Error(output.trim() || `pnpm install exited with code ${code}`))
+  })
+})
+
+function cliJson(result: RetoolCliResult): unknown {
+  try {
+    return JSON.parse(result.stdout)
+  } catch {
+    throw new Error(`Retool CLI returned invalid JSON${result.stdout ? `: ${result.stdout}` : ''}`)
+  }
+}
+
+function checkoutDirectory(value: unknown): string {
+  const checkoutDir = String(value ?? '').trim()
+  if (!checkoutDir || !isAbsolute(checkoutDir)) throw new Error('an absolute checkout directory is required')
+  if (!existsSync(join(checkoutDir, '.retool', 'app.json'))) {
+    throw new Error(`not a Retool CLI checkout: ${checkoutDir}`)
+  }
+  return checkoutDir
+}
+
+function appUuid(appDir: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
+    const uuid = pkg?.retool?.app?.uuid
+    return typeof uuid === 'string' && uuid.trim() ? uuid.trim() : null
+  } catch {
+    return null
+  }
+}
+
+function isCliCheckout(appDir: string): boolean {
+  return existsSync(join(appDir, '.retool', 'app.json'))
+}
+
+/** Resolve the CLI resource checkout for this exact app, never another app. */
+export function resolveExploreCheckoutForApp(appPath: string, config: Config): string | undefined {
+  if (isCliCheckout(appPath)) return appPath
+
+  const uuid = appUuid(appPath)
+  if (!uuid) return undefined
+
+  const configuredCheckout = config.exploreCheckoutDir
+  if (configuredCheckout && isCliCheckout(configuredCheckout) && appUuid(configuredCheckout) === uuid) {
+    return configuredCheckout
+  }
+
+  const cliRoot = config.cliAppsDir
+  if (!cliRoot || !existsSync(cliRoot)) return undefined
+
+  const canonicalCheckout = join(cliRoot, uuid)
+  if (isCliCheckout(canonicalCheckout) && appUuid(canonicalCheckout) === uuid) return canonicalCheckout
+
+  return findAppDirs(cliRoot).find((candidate) => isCliCheckout(candidate) && appUuid(candidate) === uuid)
+}
 
 export function panelViteCacheDir(port: number, instanceId: number): string {
   const name = port > 0 ? `panel-${port}` : `panel-test-${process.pid}-${instanceId}`
@@ -45,7 +146,7 @@ const READABLE_TYPES = new Set([
 type Running = {
   appPath: string
   worktreePath: string
-  branch: string
+  branch: string | null
   head: string
   dirty: boolean
   name: string
@@ -69,7 +170,7 @@ export function buildRunnerArgs(input: {
     '--port', String(input.port),
     '--environment', input.environment,
   ]
-  if (input.exploreCheckoutDir) args.push('--explore-checkout', input.exploreCheckoutDir)
+  if (input.exploreCheckoutDir) args.push('--checkout', input.exploreCheckoutDir)
   if (input.writes) args.push('--writes')
   return args
 }
@@ -122,13 +223,35 @@ export type PanelServer = {
 export type PanelServerOptions = {
   localResourceDirectory?: string
   configFile?: string
+  /** Test seam for the metadata-only Retool group directory. */
+  loadGroups?: (mcpUrl: string) => Promise<RetoolGroup[]>
+  /** Test seam for the allowed auth/list/clone/pull/push-preview Retool CLI commands. */
+  runCli?: RetoolCliRunner
+  /** Test seam for installing a newly cloned checkout's locked dependencies. */
+  installDependencies?: CheckoutInstaller
+  /** Test seam for establishing and caching the metadata-only MCP authorization. */
+  authorizeMcp?: (mcpUrl: string) => Promise<void>
 }
 
 export async function createPanelServer(port: number, options: PanelServerOptions = {}): Promise<PanelServer> {
   const instanceId = ++panelInstanceId
   const readPanelConfig = () => readConfig(options.configFile)
   const writePanelConfig = (patch: Parameters<typeof writeConfig>[0]) => writeConfig(patch, options.configFile)
-  const mcpUrl = readPanelConfig().mcpUrl || MCP_URL
+  const getMcpUrl = () => readPanelConfig().mcpUrl || MCP_URL
+  const runCli = options.runCli ?? runRetoolCli
+  const installDependencies = options.installDependencies ?? installCheckoutDependencies
+  const loadGroups = options.loadGroups ?? (async (url: string) => {
+    const client = await connectMcp(url)
+    try {
+      return await client.listGroups()
+    } finally {
+      await client.close()
+    }
+  })
+  const authorizeMcp = options.authorizeMcp ?? (async (url: string) => {
+    const client = await connectMcp(url)
+    await client.close()
+  })
   const running = new Map<number, Running>()
 
   const app = express()
@@ -169,16 +292,22 @@ export async function createPanelServer(port: number, options: PanelServerOption
 
   app.get('/api/status', (_req, res) => {
     const { localResources, localResourceError } = localResourceStatus()
+    const panelConfig = readPanelConfig()
+    const mcpUrl = getMcpUrl()
     res.json({
       mcpUrl,
-      cachedAuth: false,
+      mcpConfigured: Boolean(panelConfig.mcpUrl),
+      cachedAuth: hasCachedAuth(mcpUrl),
       connected: false,
       runtimeTransport: 'retool-cli',
-      repoDir: readPanelConfig().repoDir || '',
-      exploreCheckoutDir: readPanelConfig().exploreCheckoutDir || '',
+      repoDir: panelConfig.repoDir || panelConfig.exploreCheckoutDir || '',
+      cliAppsDir: panelConfig.cliAppsDir || (panelConfig.sourceMode !== 'git' ? panelConfig.repoDir : '') || '',
+      gitRepoDir: panelConfig.gitRepoDir || (panelConfig.sourceMode === 'git' ? panelConfig.repoDir : '') || '',
+      sourceMode: panelConfig.sourceMode || 'cli',
+      exploreCheckoutDir: panelConfig.exploreCheckoutDir || '',
       localResources,
       localResourceError,
-      currentUser: resolveCurrentUser(readPanelConfig().currentUser),
+      currentUser: resolveCurrentUser(panelConfig.currentUser),
     })
   })
 
@@ -192,8 +321,39 @@ export async function createPanelServer(port: number, options: PanelServerOption
     }
   })
 
+  app.post('/api/current-user/from-cli', async (_req, res) => {
+    try {
+      const config = readPanelConfig()
+      if (config.mcpUrl) throw new Error('CLI identity fallback is only used when MCP is not configured')
+      const who = cliJson(await runCli(['whoami', '--json'], { timeoutMs: 30_000 })) as Record<string, unknown>
+      const email = String(who.email ?? '').trim()
+      const fullName = String(who.name ?? '').trim()
+      if (!email || !fullName) throw new Error('Retool CLI did not return a name and email')
+      const parts = fullName.split(/\s+/)
+      const current = resolveCurrentUser(config.currentUser)
+      const currentUser = {
+        ...current,
+        email,
+        fullName,
+        firstName: parts[0] ?? '',
+        lastName: parts.slice(1).join(' '),
+        sid: current.sid === 'local-dev' ? `cli-${email}` : current.sid,
+      }
+      writePanelConfig({ currentUser })
+      res.json({ currentUser })
+    } catch (error) {
+      res.status(400).json({ error: `Could not load the current user from Retool CLI: ${String((error as Error)?.message ?? error)}` })
+    }
+  })
+
   app.get('/api/groups', async (_req, res) => {
-    res.json({ groups: resolveCurrentUser(readPanelConfig().currentUser).groups })
+    try {
+      res.json({ groups: await loadGroups(getMcpUrl()) })
+    } catch (error) {
+      res.status(400).json({
+        error: `Could not load the Retool group directory: ${String((error as Error)?.message ?? error)}`,
+      })
+    }
   })
 
   const localSpecError = (res: express.Response, error: unknown) => {
@@ -221,16 +381,132 @@ export async function createPanelServer(port: number, options: PanelServerOption
     }
   })
 
-  // Set the MCP URL (does not connect). Clears any existing connection.
-  app.post('/api/mcp-url', async (req, res) => {
-    void req
-    res.status(410).json({ error: 'MCP is disabled; previews use Retool CLI only.' })
+  // MCP is metadata-only: it supplies the group directory for local user
+  // emulation. App source, execution, and preview pushes remain CLI-backed.
+  app.post('/api/mcp-url', (req, res) => {
+    try {
+      const mcpUrl = String(req.body?.mcpUrl ?? '').trim()
+      const parsed = new URL(mcpUrl)
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('MCP URL must use HTTP or HTTPS')
+      writePanelConfig({ mcpUrl: parsed.toString() })
+      res.json({ mcpUrl: parsed.toString(), cachedAuth: hasCachedAuth(parsed.toString()) })
+    } catch (error) {
+      res.status(400).json({ error: `Invalid MCP endpoint: ${String((error as Error)?.message ?? error)}` })
+    }
   })
 
-  // Connect + OAuth. Opens a browser on first auth; uses cached tokens otherwise.
   app.post('/api/auth', async (_req, res) => {
-    res.status(410).json({ error: 'MCP is disabled; use `retool auth login` for CLI authentication.' })
+    const mcpUrl = getMcpUrl()
+    try {
+      await authorizeMcp(mcpUrl)
+      res.json({ connected: true, mcpUrl })
+    } catch (error) {
+      res.status(400).json({ error: `Could not authorize MCP: ${String((error as Error)?.message ?? error)}` })
+    }
   })
+
+  const cliError = (res: express.Response, error: unknown) => {
+    res.status(400).json({ error: String((error as Error)?.message ?? error) })
+  }
+
+  app.get('/api/cli/status', async (_req, res) => {
+    try {
+      const [version, status] = await Promise.all([
+        runCli(['--version'], { timeoutMs: 10_000 }),
+        runCli(['auth', 'status', '--json'], { timeoutMs: 30_000 }),
+      ])
+      res.json({ version: version.stdout, status: cliJson(status) })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.post('/api/cli/login', async (req, res) => {
+    try {
+      const host = String(req.body?.host ?? '').trim()
+      const args = ['auth', 'login']
+      if (host) args.push('--host', host)
+      await runCli(args)
+      const [version, status] = await Promise.all([
+        runCli(['--version'], { timeoutMs: 10_000 }),
+        runCli(['auth', 'status', '--json'], { timeoutMs: 30_000 }),
+      ])
+      res.json({ version: version.stdout, status: cliJson(status) })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.get('/api/cli/apps', async (req, res) => {
+    try {
+      const host = String(req.query.host ?? '').trim()
+      const args = ['apps', '--json']
+      if (host) args.push('--host', host)
+      res.json({ apps: cliJson(await runCli(args, { timeoutMs: 60_000 })) })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.post('/api/cli/clone', async (req, res) => {
+    try {
+      const appId = String(req.body?.appId ?? '').trim()
+      const parentDir = String(req.body?.parentDir ?? '').trim()
+      const branch = String(req.body?.branch ?? '').trim()
+      const host = String(req.body?.host ?? '').trim()
+      if (!appId) throw new Error('appId required')
+      if (!/^[a-zA-Z0-9-]+$/.test(appId)) throw new Error('appId must be a Retool app UUID')
+      if (!parentDir || !isAbsolute(parentDir)) throw new Error('an absolute apps parent directory is required')
+      if (!existsSync(parentDir)) throw new Error(`apps parent directory not found: ${parentDir}`)
+      const targetDir = join(parentDir, appId)
+      if (existsSync(targetDir) && readdirSync(targetDir).length > 0) throw new Error(`target directory is not empty: ${targetDir}`)
+      const args = ['clone', appId]
+      if (branch) args.push('--branch', branch)
+      if (host) args.push('--host', host)
+      await runCli(args, { cwd: parentDir })
+      if (!existsSync(join(targetDir, '.retool', 'app.json'))) {
+        throw new Error(`Retool CLI completed but did not create the expected checkout: ${targetDir}`)
+      }
+      await installDependencies(targetDir)
+      writePanelConfig({ repoDir: parentDir, cliAppsDir: parentDir, sourceMode: 'cli', exploreCheckoutDir: targetDir })
+      res.json({
+        result: { status: 'cloned', message: 'App cloned and dependencies installed.', checkoutDir: targetDir },
+        checkoutDir: targetDir,
+        appsRootDir: parentDir,
+      })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.post('/api/cli/pull', async (req, res) => {
+    try {
+      const cwd = checkoutDirectory(req.body?.checkoutDir)
+      res.json({ result: cliJson(await runCli(['pull', '--json'], { cwd })) })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.post('/api/cli/push', async (req, res) => {
+    try {
+      if (req.body?.confirmed !== true) throw new Error('explicit push confirmation required')
+      const cwd = checkoutDirectory(req.body?.checkoutDir)
+      const message = String(req.body?.message ?? '').trim()
+      if (!message) throw new Error('push message required')
+      if (message.length > 500) throw new Error('push message must be 500 characters or fewer')
+      res.json({
+        result: cliJson(await runCli(['push', '--wait', '--message', message, '--json'], { cwd })),
+      })
+    } catch (error) {
+      cliError(res, error)
+    }
+  })
+
+  app.all('/api/cli/publish', (_req, res) => {
+    res.status(405).json({ error: 'This runner does not publish. Use your development agent or Retool CLI directly.' })
+  })
+
 
   app.get('/api/resources', async (_req, res) => {
     try {
@@ -278,8 +554,9 @@ export async function createPanelServer(port: number, options: PanelServerOption
   })
 
   app.post('/api/scan', (req, res) => {
-    const raw = String(req.body?.repoDir || '').trim()
-    if (!raw) return res.status(400).json({ error: 'repoDir required' })
+    const raw = String(req.body?.repoDir || readPanelConfig().exploreCheckoutDir || '').trim()
+    const sourceMode = req.body?.sourceMode === 'git' ? 'git' : 'cli'
+    if (!raw) return res.status(400).json({ error: 'local apps parent folder required' })
     // Be forgiving: expand ~, and try the path as-is or with a leading slash
     // (users often paste "Users/…" without the leading "/").
     const candidates = [
@@ -288,12 +565,18 @@ export async function createPanelServer(port: number, options: PanelServerOption
     ]
     const repoDir = candidates.find((p) => existsSync(p))
     if (!repoDir) {
-      return res.status(400).json({ error: `directory not found: ${raw} (use an absolute path, e.g. /Users/you/Projects/retool-ops)` })
+      return res.status(400).json({ error: `directory not found: ${raw} (use an absolute local apps parent folder)` })
     }
     try {
       const apps = scanApps(repoDir)
-      writePanelConfig({ repoDir }) // remember the last good repo dir
-      res.json({ apps, repoDir })
+      const isCliCheckout = existsSync(join(repoDir, '.retool', 'app.json'))
+      writePanelConfig({
+        repoDir, // backward-compatible name for the last app source directory
+        sourceMode,
+        ...(sourceMode === 'git' ? { gitRepoDir: repoDir } : { cliAppsDir: repoDir }),
+        ...(isCliCheckout ? { exploreCheckoutDir: repoDir } : {}),
+      })
+      res.json({ apps, repoDir, sourceMode })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
     }
@@ -327,14 +610,26 @@ export async function createPanelServer(port: number, options: PanelServerOption
     const name = String(req.body?.name || appPath.split('/').pop() || 'app')
     const writes = !!req.body?.writes
     if (!appPath) return res.status(400).json({ error: 'appPath required' })
-    if (!worktreePath) return res.status(400).json({ error: 'worktreePath required' })
-    const exploreCheckoutDir = readPanelConfig().exploreCheckoutDir
-    if (!exploreCheckoutDir) return res.status(400).json({ error: 'Configure a Retool CLI checkout before running an app.' })
-    // Attach to the exact worktree selected by the user/agent. Never switch or
-    // create branches from the panel: stale selections fail closed.
-    let worktree
+    if (!worktreePath) return res.status(400).json({ error: 'app source directory required' })
+    const exploreCheckoutDir = resolveExploreCheckoutForApp(appPath, readPanelConfig())
+    if (!exploreCheckoutDir) {
+      const uuid = appUuid(appPath)
+      return res.status(400).json({
+        error: uuid
+          ? `No matching Retool CLI checkout for app ${uuid}. Open Settings → CLI checkouts and clone this app first.`
+          : 'This app has no Retool app UUID, so its matching CLI checkout cannot be resolved.',
+      })
+    }
+    // Git checkouts retain exact worktree validation. Plain Retool CLI
+    // checkouts are validated by canonical directory containment instead.
+    let source = { branch: null as string | null, head: '', dirty: false }
     try {
-      worktree = validateWorktreeTarget(appPath, worktreePath, branch)
+      if (repoRoot(appPath)) {
+        const worktree = validateWorktreeTarget(appPath, worktreePath, branch)
+        source = { branch: worktree.branch, head: worktree.head, dirty: worktree.dirty }
+      } else {
+        validateDirectoryTarget(appPath, worktreePath)
+      }
     } catch (e: any) {
       return res.status(400).json({ error: String(e?.message ?? e) })
     }
@@ -371,8 +666,8 @@ export async function createPanelServer(port: number, options: PanelServerOption
       const s = b.toString()
       process.stdout.write(`[app:${p}] ${s}`)
       if (s.includes('serving')) {
-        running.set(p, { appPath, worktreePath, branch, head: worktree.head, dirty: worktree.dirty, name, port: p, url, environment, writes, child })
-        done({ port: p, url, name, branch, worktreePath, head: worktree.head, dirty: worktree.dirty, environment, writes })
+        running.set(p, { appPath, worktreePath, branch: source.branch, head: source.head, dirty: source.dirty, name, port: p, url, environment, writes, child })
+        done({ port: p, url, name, branch: source.branch, worktreePath, head: source.head, dirty: source.dirty, environment, writes })
       }
     })
     child.stderr.on('data', (b) => {
@@ -382,9 +677,9 @@ export async function createPanelServer(port: number, options: PanelServerOption
     })
     child.on('exit', (code) => {
       running.delete(p)
-      done(runnerExitResponse(name, environment, code, stderr, readResourceRefs(appPath), mcpUrl), 400)
+      done(runnerExitResponse(name, environment, code, stderr, readResourceRefs(appPath), getMcpUrl()), 400)
     })
-    setTimeout(() => done({ port: p, url, name, branch, worktreePath, environment, writes, warning: 'started; not confirmed serving yet' }), 45000)
+    setTimeout(() => done({ port: p, url, name, branch: source.branch, worktreePath, environment, writes, warning: 'started; not confirmed serving yet' }), 45000)
   })
 
   app.get('/api/running', (_req, res) => {

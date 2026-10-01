@@ -13,17 +13,19 @@ export type TypecheckArgs = {
 
 export function typecheckUsage(): string {
   return [
-    'Typecheck one Retool React app in an existing branch worktree.',
+    'Typecheck one Retool React app from a CLI checkout or Git worktree.',
     '',
     'Usage:',
+    '  pnpm typecheck -- --app <path> [--checkout <retool-checkout>] [--json]',
     '  pnpm typecheck -- --branch <branch> --app <app> [--repo <apps-repo>] [--json]',
     '',
     'Examples:',
+    '  pnpm typecheck -- --app "/path/to/checkout/apps-v2/Operations/Report App"',
+    '  pnpm typecheck -- --checkout "/path/to/checkout" --app "Operations/Report App" --json',
     '  pnpm typecheck -- --branch feature/report --app "Operations/Report App"',
-    '  pnpm typecheck -- --repo "/path/to/apps" --branch main --app "apps-v2/Operations/Report App" --json',
     '',
-    'The branch must already have a registered Git worktree. The command never',
-    'checks out a branch and never writes generated files into the app repository.',
+    '--branch is optional. When supplied, it validates an existing Git worktree.',
+    'The command never writes generated files into the app source directory.',
   ].join('\n')
 }
 
@@ -31,7 +33,7 @@ export function parseTypecheckArgs(argv: string[], savedRepoDir = ''): Typecheck
   const values = new Map<string, string>()
   let json = false
   let help = false
-  const valueFlags = new Set(['--repo', '--branch', '--app'])
+  const valueFlags = new Set(['--repo', '--checkout', '--branch', '--app'])
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index]
     if (token === '--') continue
@@ -50,7 +52,7 @@ export function parseTypecheckArgs(argv: string[], savedRepoDir = ''): Typecheck
     index++
   }
   return {
-    repoDir: values.get('--repo') ?? savedRepoDir,
+    repoDir: values.get('--checkout') ?? values.get('--repo') ?? savedRepoDir,
     branch: values.get('--branch') ?? '',
     app: values.get('--app') ?? '',
     json,
@@ -78,8 +80,8 @@ export function runTypecheckCli(
     if (args.json) {
       output.log(JSON.stringify({ ...result, branch: target.branch, worktreePath: target.worktreePath }, null, 2))
     } else {
-      output.log(`[typecheck] branch=${target.branch}`)
-      output.log(`[typecheck] worktree=${target.worktreePath}`)
+      if (target.branch) output.log(`[typecheck] branch=${target.branch}`)
+      if (target.worktreePath) output.log(`[typecheck] worktree=${target.worktreePath}`)
       output.log(formatTypecheckResult(result, false))
     }
     return result.ok ? 0 : 1

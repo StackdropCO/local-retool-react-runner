@@ -25,11 +25,23 @@ describe('typecheck CLI arguments', () => {
     ], '/saved/repo').repoDir).toBe('/explicit/repo')
   })
 
+  it('accepts a Retool CLI checkout without requiring a branch', () => {
+    expect(parseTypecheckArgs([
+      '--checkout', '/retool/app',
+      '--app', '.',
+    ], '/saved/repo')).toMatchObject({
+      repoDir: '/retool/app',
+      branch: '',
+      app: '.',
+    })
+  })
+
   it('rejects flags with missing values before resolving a worktree', () => {
     expect(() => parseTypecheckArgs(['--branch', '--app', 'Example App'], '/repo')).toThrow(/missing value for --branch/)
   })
 
   it('documents the exact agent command', () => {
+    expect(typecheckUsage()).toContain('pnpm typecheck -- --app <path> [--checkout <retool-checkout>]')
     expect(typecheckUsage()).toContain('pnpm typecheck -- --branch <branch> --app <app>')
     expect(typecheckUsage()).toContain('--json')
   })

@@ -18,7 +18,14 @@ export type RetoolGroup = { id: number; name: string }
 export type McpClient = {
   /** CLI validates the selected environment on every real call instead. */
   skipEnvironmentPreflight?: boolean
-  executeResourceTs(resourceNames: string[], code: string, environmentName?: string): Promise<unknown>
+  executeResourceTs(
+    resourceNames: string[],
+    code: string,
+    environmentName?: string,
+    options?: { allowMutative?: boolean; safeRead?: boolean },
+  ): Promise<unknown>
+  /** Coalesce calls started together by one local RPC request when supported. */
+  batchCalls?<T>(fn: () => Promise<T>): Promise<T>
   getResourceBindings(resourceNames: string[]): Promise<ResourceBinding[]>
   listResources(nameContains?: string): Promise<Array<{ name: string; displayName?: string; type?: string }>>
   listGroups(): Promise<RetoolGroup[]>

@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { watch, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { TOOL_ROOT } from './paths.js'
+import { readConfig } from './config.js'
+import { resolveAppDirectory } from './scan.js'
 
 // Dev launcher: runs the server and restarts it on backend / tool-source
 // changes. The app's FRONTEND is hot-reloaded by Vite inside the child (no
@@ -13,7 +15,15 @@ function argVal(name: string, fallback: string): string {
   return i >= 0 ? process.argv[i + 1] : fallback
 }
 
-const appDir = argVal('app', '') // watch this app's backend if provided
+const requestedApp = argVal('app', '')
+const checkoutDir = argVal('checkout', argVal('explore-checkout', readConfig().exploreCheckoutDir || ''))
+let appDir = requestedApp
+try {
+  appDir = resolveAppDirectory(checkoutDir, requestedApp)
+} catch {
+  // The child prints the actionable startup error. Keep the dev launcher from
+  // masking it while still allowing its source watcher to start.
+}
 const passthroughArgs = process.argv.slice(2) // forward --app/--port/--writes to the child
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
 

@@ -1,8 +1,12 @@
 export interface PanelStatus {
   mcpUrl: string
+  mcpConfigured?: boolean
   cachedAuth: boolean
   connected: boolean
   repoDir: string
+  cliAppsDir?: string
+  gitRepoDir?: string
+  sourceMode?: 'cli' | 'git'
   localResources?: LocalResourceSummary[]
   localResourceError?: string
   currentUser?: CurrentUser
@@ -66,13 +70,14 @@ export interface AppWorktree {
   branch: string | null
   head: string
   dirty: boolean
+  cliCheckout?: boolean
 }
 
 export interface RunningApp {
   name: string
   appPath: string
   worktreePath: string
-  branch: string
+  branch: string | null
   head: string
   dirty: boolean
   port: number
@@ -92,7 +97,7 @@ export interface RunInput {
   appPath: string
   worktreePath: string
   name: string
-  branch: string
+  branch: string | null
   environment: 'staging' | 'production'
   writes: boolean
 }
@@ -109,4 +114,20 @@ export interface RunResult {
   writes?: boolean
   alreadyRunning?: boolean
   warning?: string
+}
+
+export interface RetoolCliHost {
+  host: string
+  userEmail?: string
+  expired?: boolean
+}
+
+export interface RetoolCliStatus {
+  defaultHost?: string
+  hosts?: RetoolCliHost[]
+}
+
+export interface RetoolCliApp {
+  id: string
+  name: string
 }

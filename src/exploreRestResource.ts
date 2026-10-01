@@ -1,5 +1,5 @@
 import { logQuery } from './queryLog.js'
-import { runRetoolExplore, type RetoolExplorePayload } from './retoolExplore.js'
+import { DEFAULT_EXPLORE_ROWS, runRetoolExplore, type RetoolExplorePayload } from './retoolExplore.js'
 
 export type ExploreRestRequest = {
   method?: string
@@ -64,7 +64,7 @@ export function createExploreRestResource(
       const payload = await explore(code, {
         checkoutDir: options.checkoutDir,
         environmentName: options.environmentName,
-        rows: options.rows ?? 5000,
+        rows: options.rows ?? DEFAULT_EXPLORE_ROWS,
         // Retool Explore classifies rawRequest itself as mutative because it
         // cannot infer the HTTP method from the argument. We enforce the
         // method-level write gate above, then permit the validated request.

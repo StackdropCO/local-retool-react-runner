@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RunInput, ScannedApp } from '../lib/types'
+import type { RunInput, RunResult, ScannedApp } from '../lib/types'
 import { PanelApiError, type MissingRetoolResource } from '../lib/api'
 import {
   AlertDialog,
@@ -13,11 +13,14 @@ import {
 } from './ui/alert-dialog'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
 import { Switch } from './ui/switch'
 
 type AppCardProps = {
   app: ScannedApp
-  onRun(input: RunInput): Promise<void>
+  onRun(input: RunInput): Promise<RunResult>
+  onPull(checkoutDir: string): Promise<unknown>
+  onPush(checkoutDir: string, message: string): Promise<unknown>
 }
 
 const NO_WORKTREES: ScannedApp['worktrees'] = []
@@ -32,7 +35,9 @@ function branchLabel(name: string, current?: string | null) {
   return name === current ? `${short} (current)` : short
 }
 
-export function AppCard({ app, onRun }: AppCardProps) {
+const resultText = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+
+export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
   const worktrees = app.worktrees ?? NO_WORKTREES
   const initialWorktree = worktrees.find((worktree) => worktree.appPath === app.path)
     ?? worktrees.find((worktree) => worktree.branch === app.branch)
@@ -43,6 +48,12 @@ export function AppCard({ app, onRun }: AppCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [productionConfirmOpen, setProductionConfirmOpen] = useState(false)
   const [running, setRunning] = useState(false)
+  const [pushOpen, setPushOpen] = useState(false)
+  const [pushMessage, setPushMessage] = useState('')
+  const [pushing, setPushing] = useState(false)
+  const [pulling, setPulling] = useState(false)
+  const [pushResult, setPushResult] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
   const [error, setError] = useState<{ message: string; missingResources: MissingRetoolResource[] } | null>(null)
 
   useEffect(() => {
@@ -58,19 +69,25 @@ export function AppCard({ app, onRun }: AppCardProps) {
     : 'No resources'
 
   const run = async () => {
+    const previewWindow = typeof window !== 'undefined' && !/jsdom/i.test(window.navigator.userAgent)
+      ? window.open('about:blank', '_blank')
+      : null
     setRunning(true)
     setError(null)
     try {
-      if (!selectedWorktree) throw new Error('Select a registered worktree before running this app.')
-      await onRun({
+      if (!selectedWorktree) throw new Error('Select an app source directory before running this app.')
+      const result = await onRun({
         appPath: selectedWorktree.appPath,
         worktreePath: selectedWorktree.worktreePath,
         name: app.name,
-        branch: selectedWorktree.branch || '',
+        branch: selectedWorktree.branch,
         environment,
         writes,
       })
+      setPreviewUrl(result.url)
+      if (previewWindow) previewWindow.location.replace(result.url)
     } catch (cause) {
+      previewWindow?.close()
       setError({
         message: cause instanceof Error ? cause.message : String(cause),
         missingResources: cause instanceof PanelApiError ? cause.details.missingResources ?? [] : [],
@@ -85,8 +102,46 @@ export function AppCard({ app, onRun }: AppCardProps) {
     else void run()
   }
 
+  const push = async () => {
+    if (!selectedWorktree || !pushMessage.trim()) return
+    setPushOpen(false)
+    setPushing(true)
+    setError(null)
+    setPushResult('')
+    try {
+      const result = await onPush(selectedWorktree.worktreePath, pushMessage.trim())
+      setPushResult(resultText(result))
+      setPushMessage('')
+    } catch (cause) {
+      setError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        missingResources: [],
+      })
+    } finally {
+      setPushing(false)
+    }
+  }
+
+  const pull = async () => {
+    if (!selectedWorktree) return
+    setPulling(true)
+    setError(null)
+    setPushResult('')
+    try {
+      const result = await onPull(selectedWorktree.worktreePath)
+      setPushResult(resultText(result))
+    } catch (cause) {
+      setError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        missingResources: [],
+      })
+    } finally {
+      setPulling(false)
+    }
+  }
+
   return (
-    <div className="border-b px-5 py-4 last:border-b-0">
+    <div className="rounded-xl border bg-card px-5 py-4 shadow-[0_1px_2px_rgba(30,41,59,0.04),0_5px_18px_rgba(30,41,59,0.035)] transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -102,42 +157,67 @@ export function AppCard({ app, onRun }: AppCardProps) {
             {app.endpoints.length} endpoint{app.endpoints.length === 1 ? '' : 's'}
             {` · ${resourceSummary}`}
           </p>
-          <p className="mono mt-1 truncate text-[11px] text-muted-foreground/75" title={app.path}>
+          <p className="mono mt-1 truncate text-xs text-muted-foreground" title={app.path}>
             {app.path}
           </p>
         </div>
 
-        <Button
-          size="sm"
-          className="mt-0.5"
-          onClick={requestRun}
-          disabled={running || !selectedWorktree}
-          aria-label={`Run ${app.name}`}
-        >
-          {running ? 'Starting…' : 'Run'}
-        </Button>
+        <div className="mt-0.5 flex shrink-0 gap-2">
+          {selectedWorktree?.cliCheckout && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void pull()}
+                disabled={pulling || pushing}
+                aria-label={`Pull latest for ${app.name}`}
+              >
+                {pulling ? 'Pulling…' : 'Pull'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPushOpen(true)}
+                disabled={pushing || pulling}
+                aria-label={`Push preview for ${app.name}`}
+              >
+                {pushing ? 'Pushing…' : 'Push preview'}
+              </Button>
+            </>
+          )}
+          <Button
+            size="sm"
+            onClick={requestRun}
+            disabled={running || !selectedWorktree}
+            aria-label={`Run ${app.name}`}
+          >
+            {running ? 'Starting…' : 'Run'}
+          </Button>
+        </div>
       </div>
 
       <div className="mt-3 grid items-end gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
         <label className="min-w-0 space-y-1">
           <span className="block text-xs font-semibold text-muted-foreground">
-            Worktree
+            Source
           </span>
           <select
-            aria-label={`Worktree for ${app.name}`}
+            aria-label={`Source for ${app.name}`}
             title={selectedWorktree?.worktreePath}
             value={worktreePath}
             onChange={(event) => setWorktreePath(event.target.value)}
-            className="mono h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+            className="mono h-9 w-full rounded-md border border-input bg-control px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
           >
             {worktrees.length ? (
               worktrees.map((item) => (
                 <option key={item.worktreePath} value={item.worktreePath} title={item.worktreePath}>
-                  {branchLabel(item.branch || 'detached', app.branch)} · {item.head.slice(0, 7)} · {item.dirty ? 'modified' : 'clean'}
+                  {item.head
+                    ? `${branchLabel(item.branch || 'detached', app.branch)} · ${item.head.slice(0, 7)} · ${item.dirty ? 'modified' : 'clean'}`
+                    : 'Retool CLI checkout'}
                 </option>
               ))
             ) : (
-              <option value="">no registered worktree</option>
+              <option value="">no app source found</option>
             )}
           </select>
         </label>
@@ -150,7 +230,7 @@ export function AppCard({ app, onRun }: AppCardProps) {
             aria-label={`Environment for ${app.name}`}
             value={environment}
             onChange={(event) => setEnvironment(event.target.value as 'staging' | 'production')}
-            className={`mono h-9 w-full rounded-md border bg-background px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring ${
+            className={`mono h-9 w-full rounded-md border bg-control px-2.5 text-xs outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring ${
               environment === 'production' ? 'border-destructive text-destructive' : 'border-input'
             }`}
           >
@@ -163,7 +243,7 @@ export function AppCard({ app, onRun }: AppCardProps) {
           <span className="block text-xs font-semibold text-muted-foreground">
             Access
           </span>
-          <label className="flex h-9 min-w-32 items-center gap-2 rounded-md border border-input bg-background px-2.5 text-xs text-muted-foreground">
+          <label className="flex h-9 min-w-32 items-center gap-2 rounded-md border border-input bg-control px-2.5 text-xs text-muted-foreground">
             <Switch
               aria-label={`Enable writes for ${app.name}`}
               checked={writes}
@@ -198,6 +278,36 @@ export function AppCard({ app, onRun }: AppCardProps) {
           </AlertDescription>
         </Alert>
       )}
+      {pushResult && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs" role="status">{pushResult}</pre>}
+      {previewUrl && (
+        <Alert className="mt-2" role="status">
+          <AlertDescription>
+            Preview ready.{' '}
+            <a href={previewUrl} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">Open preview</a>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <AlertDialog open={pushOpen} onOpenChange={setPushOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Push {app.name} to a Retool preview?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Retool will validate and push the selected source checkout, then wait for this app's preview build. This does not publish the app live.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            aria-label={`Push message for ${app.name}`}
+            value={pushMessage}
+            onChange={(event) => setPushMessage(event.target.value)}
+            placeholder="Describe the completed changes"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={!pushMessage.trim()} onClick={() => void push()}>Push preview</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

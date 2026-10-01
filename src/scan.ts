@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { currentBranch, listBranches, listWorktrees, repoRoot } from './git.js'
 
 export type AppWorktree = {
@@ -8,6 +8,7 @@ export type AppWorktree = {
   branch: string | null
   head: string
   dirty: boolean
+  cliCheckout: boolean
 }
 
 export type ScannedApp = {
@@ -23,7 +24,7 @@ export type ScannedApp = {
 
 // Walk up to `depth` levels under root, returning dirs that look like a Retool
 // apps-as-code app: a package.json with retool.app + a frontend/App.tsx.
-function findAppDirs(root: string, depth = 4): string[] {
+export function findAppDirs(root: string, depth = 4): string[] {
   const out: string[] = []
   const walk = (dir: string, level: number) => {
     if (level > depth || !existsSync(dir)) return
@@ -58,6 +59,50 @@ function findAppDirs(root: string, depth = 4): string[] {
   return out
 }
 
+const canonical = (path: string) => realpathSync.native(resolve(path))
+
+/**
+ * Resolve an app from a Retool CLI checkout or any ordinary source directory.
+ * Absolute app paths remain supported. Relative names are tried both directly
+ * below the source root and below its conventional apps-v2 directory.
+ */
+export function resolveAppDirectory(sourceDir: string, app = ''): string {
+  if (!sourceDir && !isAbsolute(app)) {
+    throw new Error('no app source configured; pass --checkout "/path/to/retool-checkout" or an absolute --app path')
+  }
+  const sourceRoot = sourceDir ? canonical(sourceDir) : ''
+  const candidates = app
+    ? isAbsolute(app)
+      ? [resolve(app)]
+      : [resolve(sourceRoot, app), resolve(sourceRoot, 'apps-v2', app)]
+    : findAppDirs(sourceRoot)
+  const matches = [...new Set(candidates)]
+    .filter((candidate) => existsSync(join(candidate, 'frontend', 'App.tsx')))
+    .map(canonical)
+  if (!matches.length) {
+    throw new Error(app
+      ? `Retool React app not found: ${app}`
+      : `no Retool React apps found under checkout: ${sourceRoot}`)
+  }
+  if (!app && matches.length > 1) {
+    throw new Error(`multiple Retool React apps found under checkout; pass --app with one of: ${matches.join(', ')}`)
+  }
+  return matches[0]!
+}
+
+export function validateDirectoryTarget(appPath: string, expectedRoot: string): void {
+  if (!expectedRoot) throw new Error('app source directory required')
+  const root = canonical(expectedRoot)
+  const app = canonical(appPath)
+  const fromRoot = relative(root, app)
+  if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    throw new Error(`app path is outside the selected source directory: ${app}`)
+  }
+  if (!existsSync(join(app, 'frontend', 'App.tsx'))) {
+    throw new Error(`not a Retool React app (missing frontend/App.tsx): ${app}`)
+  }
+}
+
 function endpointsOf(appDir: string): string[] {
   const backend = join(appDir, 'backend')
   const out: string[] = []
@@ -66,7 +111,7 @@ function endpointsOf(appDir: string): string[] {
     for (const e of readdirSync(dir)) {
       const p = join(dir, e)
       if (statSync(p).isDirectory()) walk(p)
-      else if (e.endsWith('.ts') && /export\s+default/.test(readFileSync(p, 'utf8'))) out.push(e.replace(/\.ts$/, ''))
+      else if (e.endsWith('.ts') && !e.endsWith('.d.ts') && /export\s+default/.test(readFileSync(p, 'utf8'))) out.push(e.replace(/\.ts$/, ''))
     }
   }
   walk(backend)
@@ -94,12 +139,21 @@ export function scanApps(repoDir: string): ScannedApp[] {
               branch: worktree.branch,
               head: worktree.head,
               dirty: worktree.dirty,
+              cliCheckout: existsSync(join(worktree.path, '.retool', 'app.json'))
+                || existsSync(join(worktree.path, relativeAppPath, '.retool', 'app.json')),
             }))
             .filter((worktree) => existsSync(join(worktree.appPath, 'package.json')) && existsSync(join(worktree.appPath, 'frontend', 'App.tsx')))
-        : []
+        : [{
+            worktreePath: canonical(path),
+            appPath: canonical(path),
+            branch: null,
+            head: '',
+            dirty: false,
+            cliCheckout: existsSync(join(path, '.retool', 'app.json')),
+          }]
       return {
         name: app.name ?? parts[parts.length - 1],
-        path,
+        path: canonical(path),
         group: parts[parts.length - 2] ?? '',
         endpoints: endpointsOf(path),
         resources: Object.values(refs),

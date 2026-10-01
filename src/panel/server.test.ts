@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildRunnerArgs, createPanelServer, panelViteCacheDir, runnerExitResponse, type PanelServer } from './server'
+import { buildRunnerArgs, createPanelServer, panelViteCacheDir, resolveExploreCheckoutForApp, runnerExitResponse, type PanelServer } from './server'
 
 const temporaryDirectories: string[] = []
 const validSpec = `openapi: 3.0.3
@@ -95,19 +95,151 @@ describe('panel server', () => {
     expect(invalid.status).toBe(400)
   })
 
-  it('serves the locally configured emulated groups without MCP', async () => {
+  it('syncs CLI identity while preserving locally edited groups when MCP is not configured', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'panel-cli-user-'))
+    temporaryDirectories.push(directory)
+    const configFile = join(directory, 'config.json')
+    writeFileSync(configFile, JSON.stringify({
+      currentUser: {
+        id: 42,
+        email: 'old@example.com',
+        firstName: 'Old',
+        lastName: 'Name',
+        fullName: 'Old Name',
+        profilePhotoUrl: null,
+        groups: [{ id: 7, name: 'Local Operators' }],
+        metadata: { geo: 'gbr' },
+        sid: 'local-user',
+        externalIdentifier: null,
+        locale: 'en',
+      },
+    }))
+    panel = await createPanelServer(0, {
+      configFile,
+      runCli: async (args) => {
+        expect(args).toEqual(['whoami', '--json'])
+        return { stdout: JSON.stringify({ name: 'CLI User', email: 'cli@example.com' }), stderr: '' }
+      },
+    })
+
+    const response = await fetch(`${panel.url}/api/current-user/from-cli`, { method: 'POST' })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      currentUser: {
+        id: 42,
+        email: 'cli@example.com',
+        firstName: 'CLI',
+        lastName: 'User',
+        fullName: 'CLI User',
+        groups: [{ id: 7, name: 'Local Operators' }],
+        metadata: { geo: 'gbr' },
+      },
+    })
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toMatchObject({
+      currentUser: {
+        email: 'cli@example.com',
+        groups: [{ id: 7, name: 'Local Operators' }],
+      },
+    })
+  })
+
+  it('loads the Retool group catalog through the metadata-only provider', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'panel-groups-'))
     temporaryDirectories.push(directory)
     const configFile = join(directory, 'config.json')
     writeFileSync(configFile, JSON.stringify({ mcpUrl: 'https://example.retool.com/mcp' }))
-    panel = await createPanelServer(0, { configFile })
+    const requestedUrls: string[] = []
+    panel = await createPanelServer(0, {
+      configFile,
+      loadGroups: async (mcpUrl) => {
+        requestedUrls.push(mcpUrl)
+        return [{ id: 7, name: 'Operators' }, { id: 8, name: 'Viewers' }]
+      },
+    })
 
     const response = await fetch(`${panel.url}/api/groups`)
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      groups: [],
+      groups: [{ id: 7, name: 'Operators' }, { id: 8, name: 'Viewers' }],
     })
+    expect(requestedUrls).toEqual(['https://example.retool.com/mcp'])
+  })
+
+  it('saves and authorizes the metadata-only MCP connection', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'panel-mcp-settings-'))
+    temporaryDirectories.push(directory)
+    const configFile = join(directory, 'config.json')
+    const authorizedUrls: string[] = []
+    panel = await createPanelServer(0, {
+      configFile,
+      authorizeMcp: async (mcpUrl) => { authorizedUrls.push(mcpUrl) },
+    })
+
+    const saved = await fetch(`${panel.url}/api/mcp-url`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mcpUrl: 'https://example.retool.com/mcp' }),
+    })
+    expect(saved.status).toBe(200)
+    await expect(saved.json()).resolves.toMatchObject({ mcpUrl: 'https://example.retool.com/mcp' })
+    await expect(fetch(`${panel.url}/api/status`).then((response) => response.json()))
+      .resolves.toMatchObject({ mcpUrl: 'https://example.retool.com/mcp' })
+
+    const authorized = await fetch(`${panel.url}/api/auth`, { method: 'POST' })
+    expect(authorized.status).toBe(200)
+    await expect(authorized.json()).resolves.toEqual({
+      connected: true,
+      mcpUrl: 'https://example.retool.com/mcp',
+    })
+    expect(authorizedUrls).toEqual(['https://example.retool.com/mcp'])
+    expect(JSON.parse(readFileSync(configFile, 'utf8')).mcpUrl).toBe('https://example.retool.com/mcp')
+  })
+
+  it('reports group-directory failures without affecting CLI execution', async () => {
+    panel = await createPanelServer(0, {
+      loadGroups: async () => { throw new Error('authentication required') },
+    })
+
+    const response = await fetch(`${panel.url}/api/groups`)
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: 'Could not load the Retool group directory: authentication required',
+    })
+  })
+
+  it('detects the installed Retool CLI version and authentication status', async () => {
+    const calls: string[][] = []
+    panel = await createPanelServer(0, {
+      runCli: async (args) => {
+        calls.push(args)
+        return args[0] === '--version'
+          ? { stdout: '0.4.65 (launcher 0.1.4)', stderr: '' }
+          : {
+              stdout: JSON.stringify({
+                defaultHost: 'https://example.retool.com',
+                hosts: [{ host: 'https://example.retool.com', userEmail: 'dev@example.com' }],
+              }),
+              stderr: '',
+            }
+      },
+    })
+
+    const response = await fetch(`${panel.url}/api/cli/status`)
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      version: '0.4.65 (launcher 0.1.4)',
+      status: {
+        defaultHost: 'https://example.retool.com',
+        hosts: [{ host: 'https://example.retool.com', userEmail: 'dev@example.com' }],
+      },
+    })
+    expect(calls).toEqual(expect.arrayContaining([
+      ['--version'],
+      ['auth', 'status', '--json'],
+    ]))
   })
 
   it('isolates live and test panel dependency caches', () => {
@@ -116,7 +248,7 @@ describe('panel server', () => {
     expect(panelViteCacheDir(0, 1)).not.toBe(panelViteCacheDir(0, 2))
   })
 
-  it('requires an exact worktree path instead of resolving a branch implicitly', async () => {
+  it('requires an app source path instead of resolving a branch implicitly', async () => {
     panel = await createPanelServer(0)
 
     const response = await fetch(`${panel.url}/api/run`, {
@@ -126,8 +258,167 @@ describe('panel server', () => {
     })
 
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual({ error: 'worktreePath required' })
+    await expect(response.json()).resolves.toEqual({ error: 'app source directory required' })
   })
+
+  it('uses a scanned Retool CLI checkout as both app source and resource checkout', async () => {
+    const checkout = mkdtempSync(join(tmpdir(), 'panel-cli-checkout-'))
+    temporaryDirectories.push(checkout)
+    const configFile = join(checkout, 'panel-config.json')
+    mkdirSync(join(checkout, 'frontend'), { recursive: true })
+    mkdirSync(join(checkout, '.retool'), { recursive: true })
+    writeFileSync(join(checkout, 'package.json'), JSON.stringify({ retool: { app: { name: 'CLI App' } } }))
+    writeFileSync(join(checkout, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    writeFileSync(join(checkout, '.retool', 'app.json'), '{}')
+    panel = await createPanelServer(0, { configFile })
+
+    const scan = await fetch(`${panel.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repoDir: checkout }),
+    })
+
+    expect(scan.status).toBe(200)
+    await expect(scan.json()).resolves.toMatchObject({
+      repoDir: checkout,
+      apps: [{ name: 'CLI App' }],
+    })
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toMatchObject({
+      repoDir: checkout,
+      exploreCheckoutDir: checkout,
+    })
+  })
+
+  it('pairs Git source with the CLI checkout for the same Retool app UUID', () => {
+    const root = mkdtempSync(join(tmpdir(), 'panel-hybrid-source-'))
+    temporaryDirectories.push(root)
+    const gitApp = join(root, 'git', 'apps-v2', 'Group', 'Git App')
+    const cliRoot = join(root, 'cli')
+    const matchingCheckout = join(cliRoot, 'app-uuid')
+    const unrelatedCheckout = join(cliRoot, 'other-app')
+
+    for (const [path, uuid] of [[gitApp, 'app-uuid'], [matchingCheckout, 'app-uuid'], [unrelatedCheckout, 'other-uuid']] as const) {
+      mkdirSync(join(path, 'frontend'), { recursive: true })
+      writeFileSync(join(path, 'package.json'), JSON.stringify({ retool: { app: { name: 'App', uuid } } }))
+      writeFileSync(join(path, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    }
+    mkdirSync(join(matchingCheckout, '.retool'), { recursive: true })
+    mkdirSync(join(unrelatedCheckout, '.retool'), { recursive: true })
+    writeFileSync(join(matchingCheckout, '.retool', 'app.json'), '{}')
+    writeFileSync(join(unrelatedCheckout, '.retool', 'app.json'), '{}')
+
+    expect(resolveExploreCheckoutForApp(gitApp, {
+      cliAppsDir: cliRoot,
+      exploreCheckoutDir: unrelatedCheckout,
+    })).toBe(matchingCheckout)
+  })
+
+  it('does not run Git source through another app\'s CLI checkout', () => {
+    const root = mkdtempSync(join(tmpdir(), 'panel-hybrid-mismatch-'))
+    temporaryDirectories.push(root)
+    const gitApp = join(root, 'git-app')
+    const unrelatedCheckout = join(root, 'unrelated-cli-app')
+    for (const [path, uuid] of [[gitApp, 'git-uuid'], [unrelatedCheckout, 'other-uuid']] as const) {
+      mkdirSync(join(path, 'frontend'), { recursive: true })
+      writeFileSync(join(path, 'package.json'), JSON.stringify({ retool: { app: { name: 'App', uuid } } }))
+      writeFileSync(join(path, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    }
+    mkdirSync(join(unrelatedCheckout, '.retool'), { recursive: true })
+    writeFileSync(join(unrelatedCheckout, '.retool', 'app.json'), '{}')
+
+    expect(resolveExploreCheckoutForApp(gitApp, { exploreCheckoutDir: unrelatedCheckout })).toBeUndefined()
+  })
+
+  it('runs clone and pull through the Retool CLI and saves the cloned checkout', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'panel-cli-lifecycle-'))
+    temporaryDirectories.push(parent)
+    const configFile = join(parent, 'config.json')
+    const target = join(parent, 'app-uuid')
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    const installs: string[] = []
+    const runCli = async (args: string[], options?: { cwd?: string }) => {
+      calls.push({ args, cwd: options?.cwd })
+      if (args[0] === 'clone') {
+        mkdirSync(join(target, '.retool'), { recursive: true })
+        writeFileSync(join(target, '.retool', 'app.json'), '{}')
+      }
+      return { stdout: JSON.stringify({ ok: true }), stderr: '' }
+    }
+    panel = await createPanelServer(0, {
+      configFile,
+      runCli,
+      installDependencies: async (checkoutDir) => { installs.push(checkoutDir) },
+    })
+
+    const clone = await fetch(`${panel.url}/api/cli/clone`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ appId: 'app-uuid', parentDir: parent, branch: 'feature', host: 'example.retool.com' }),
+    })
+    expect(clone.status).toBe(200)
+    await expect(clone.json()).resolves.toEqual({
+      result: { status: 'cloned', message: 'App cloned and dependencies installed.', checkoutDir: target },
+      checkoutDir: target,
+      appsRootDir: parent,
+    })
+    expect(calls[0]).toEqual({
+      args: ['clone', 'app-uuid', '--branch', 'feature', '--host', 'example.retool.com'],
+      cwd: parent,
+    })
+    expect(installs).toEqual([target])
+    expect(JSON.parse(readFileSync(configFile, 'utf8'))).toMatchObject({
+      repoDir: parent,
+      exploreCheckoutDir: target,
+    })
+
+    const pull = await fetch(`${panel.url}/api/cli/pull`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ checkoutDir: target }),
+    })
+    expect(pull.status).toBe(200)
+    expect(calls[1]).toEqual({ args: ['pull', '--json'], cwd: target })
+  })
+
+  it('requires explicit confirmation for preview pushes and blocks publishing', async () => {
+    const checkout = mkdtempSync(join(tmpdir(), 'panel-cli-push-'))
+    temporaryDirectories.push(checkout)
+    mkdirSync(join(checkout, '.retool'), { recursive: true })
+    writeFileSync(join(checkout, '.retool', 'app.json'), '{}')
+    const calls: Array<{ args: string[]; cwd?: string }> = []
+    const runCli = async (args: string[], options?: { cwd?: string }) => {
+      calls.push({ args, cwd: options?.cwd })
+      return { stdout: JSON.stringify({ previewUrl: 'https://example.retool.com/apps/app-uuid' }), stderr: '' }
+    }
+    panel = await createPanelServer(0, { runCli })
+
+    const unconfirmed = await fetch(`${panel.url}/api/cli/push`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ checkoutDir: checkout, message: 'Finish report filters' }),
+    })
+    expect(unconfirmed.status).toBe(400)
+    expect(calls).toEqual([])
+
+    const pushed = await fetch(`${panel.url}/api/cli/push`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ checkoutDir: checkout, message: 'Finish report filters', confirmed: true }),
+    })
+    expect(pushed.status).toBe(200)
+    await expect(pushed.json()).resolves.toEqual({
+      result: { previewUrl: 'https://example.retool.com/apps/app-uuid' },
+    })
+    expect(calls).toEqual([{
+      args: ['push', '--wait', '--message', 'Finish report filters', '--json'],
+      cwd: checkout,
+    }])
+
+    const publish = await fetch(`${panel.url}/api/cli/publish`, { method: 'POST' })
+    expect(publish.status).toBe(405)
+    expect(calls).toHaveLength(1)
+  })
+
 
   it('rejects unknown Retool environments before launching a runner', async () => {
     panel = await createPanelServer(0)
@@ -163,7 +454,7 @@ describe('panel server', () => {
       environment: 'staging',
       writes: false,
       exploreCheckoutDir: '/retool/checkout',
-    })).toContainEqual('--explore-checkout')
+    })).toContainEqual('--checkout')
     expect(buildRunnerArgs({
       appPath: '/repo/apps-v2/Group/App',
       port: 5174,

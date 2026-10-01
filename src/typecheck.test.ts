@@ -59,6 +59,22 @@ afterEach(() => {
 })
 
 describe('resolveTypecheckTarget', () => {
+  it('resolves a Retool CLI checkout without a Git branch', () => {
+    const checkout = mkdtempSync(join(tmpdir(), 'local-mcp-typecheck-checkout-'))
+    temporaryDirectories.push(checkout)
+    const app = createApp(checkout)
+
+    expect(resolveTypecheckTarget({
+      repoDir: checkout,
+      branch: '',
+      app: 'Operations/Example App',
+    })).toEqual({
+      appDir: realpathSync(app),
+      branch: null,
+      worktreePath: null,
+    })
+  })
+
   it('resolves the app in the exact registered branch worktree without switching branches', () => {
     const { main, feature } = repositoryWithFeatureWorktree()
 

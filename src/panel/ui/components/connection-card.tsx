@@ -36,8 +36,10 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
   return (
     <Card>
       <CardHeader>
-        <CardTitle>MCP endpoint</CardTitle>
-        <CardDescription>Connection used to discover resources and run local previews.</CardDescription>
+        <CardTitle>Retool MCP metadata connection</CardTitle>
+        <CardDescription>
+          Used only to load Retool group memberships for the emulated user. Apps, resources, and previews continue to use the Retool CLI.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -57,10 +59,19 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
           >
             {action === 'save' ? 'Saving…' : 'Save'}
           </Button>
-          <Button disabled={!mcpUrl.trim() || action !== null} onClick={() => runAction('authorize', onAuthorize)}>
-            {action === 'authorize' ? 'Authorizing…' : 'Authorize'}
+          <Button
+            disabled={!mcpUrl.trim() || action !== null}
+            onClick={() => runAction('authorize', async () => {
+              await onSave(mcpUrl.trim())
+              await onAuthorize()
+            })}
+          >
+            {action === 'authorize' ? 'Authorizing…' : status?.cachedAuth ? 'Re-authorize' : 'Authorize'}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          {status?.cachedAuth ? 'Authorization is saved for group discovery.' : 'Not authorized. Group discovery will require MCP authorization.'}
+        </p>
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>

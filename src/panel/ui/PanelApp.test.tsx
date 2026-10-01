@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PanelApp } from './PanelApp'
@@ -35,6 +35,7 @@ const exampleApp = {
       branch: 'main',
       head: '1111111111111111111111111111111111111111',
       dirty: false,
+      cliCheckout: true,
     },
     {
       worktreePath: '/worktrees/feature',
@@ -42,6 +43,7 @@ const exampleApp = {
       branch: 'feature',
       head: '2222222222222222222222222222222222222222',
       dirty: true,
+      cliCheckout: true,
     },
   ],
   endpoints: ['getItems', 'saveItem'],
@@ -54,17 +56,22 @@ function fakeApi(): PanelApi {
   return {
     status: vi.fn(async () => ({
       mcpUrl: 'https://example.retool.com/mcp',
+      mcpConfigured: true,
       cachedAuth: true,
       connected: true,
       runtimeTransport: 'retool-cli' as const,
       exploreCheckoutDir: '/retool/checkout',
       repoDir: '/repo',
+      cliAppsDir: '/repo',
+      gitRepoDir: '/git-repo',
+      sourceMode: 'cli' as const,
       currentUser,
     })),
     saveMcpUrl: vi.fn(async (mcpUrl: string) => ({ mcpUrl, cachedAuth: true })),
     authorize: vi.fn(async () => ({ connected: true as const, mcpUrl: 'https://example.retool.com/mcp' })),
     groups: vi.fn(async () => ({ groups: [{ id: 10, name: 'Analytics viewers' }] })),
     saveCurrentUser: vi.fn(async (user) => ({ currentUser: user })),
+    syncCurrentUserFromCli: vi.fn(async () => ({ currentUser })),
     resources: vi.fn(async () => ({ resources: [] })),
     loadLocalResourceSpec: vi.fn(async () => ({
       resourceId: 'resource-uuid',
@@ -81,10 +88,32 @@ function fakeApi(): PanelApi {
       content,
     })),
     browse: vi.fn(async () => ({ dir: '/repo', parent: '/', dirs: ['apps-v2'], isRepo: true })),
-    scan: vi.fn(async () => ({ apps: [exampleApp], repoDir: '/repo' })),
+    scan: vi.fn(async (repoDir: string, sourceMode: 'cli' | 'git' = 'cli') => ({ apps: [exampleApp], repoDir, sourceMode })),
     run: vi.fn(async () => ({ port: 5174, url: 'http://localhost:5174' })),
     running: vi.fn(async () => ({ apps: [] })),
     stop: vi.fn(async (port: number) => ({ stopped: port })),
+    cliStatus: vi.fn(async () => ({
+      version: '0.4.65',
+      status: {
+        defaultHost: 'https://example.retool.com',
+        hosts: [{ host: 'https://example.retool.com', userEmail: 'dev@example.com', expired: false }],
+      },
+    })),
+    cliLogin: vi.fn(async () => ({
+      version: '0.4.65',
+      status: {
+        defaultHost: 'https://example.retool.com',
+        hosts: [{ host: 'https://example.retool.com', userEmail: 'dev@example.com', expired: false }],
+      },
+    })),
+    cliApps: vi.fn(async () => ({ apps: [{ id: 'app-uuid', name: 'Example App' }] })),
+    cliClone: vi.fn(async (input) => ({
+      result: { cloned: input.appId },
+      checkoutDir: `${input.parentDir}/${input.appId}`,
+      appsRootDir: input.parentDir,
+    })),
+    cliPull: vi.fn(async () => ({ result: { pulled: true } })),
+    cliPush: vi.fn(async () => ({ result: { previewUrl: 'https://example.retool.com/apps/app-uuid' } })),
   }
 }
 
@@ -93,11 +122,139 @@ describe('PanelApp', () => {
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByText('/retool/checkout')).toBeInTheDocument()
-    expect(screen.getByText('CLI ready')).toBeInTheDocument()
+    expect(await screen.findByText('/repo')).toBeInTheDocument()
+    expect(screen.getByText('Apps folder ready')).toBeInTheDocument()
     expect(screen.getByText('0 running')).toBeInTheDocument()
     expect(api.status).toHaveBeenCalledOnce()
     expect(api.running).toHaveBeenCalledOnce()
+  })
+
+  it('routes an unconfigured app source directly to the matching setup', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    const configuredStatus = await api.status()
+    api.status = vi.fn(async () => ({
+      ...configuredStatus,
+      repoDir: '',
+      cliAppsDir: '',
+      gitRepoDir: '',
+      sourceMode: 'cli' as const,
+    }))
+
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Configure CLI source' }))
+    expect(screen.getByRole('tabpanel', { name: 'Settings' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'CLI checkouts' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('heading', { name: 'Retool CLI connection and source' })).toBeInTheDocument()
+  })
+
+  it('lists and clones a Retool app from Settings', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    await waitFor(() => expect(api.cliApps).toHaveBeenCalledWith('https://example.retool.com'))
+    expect(screen.getByText(/Retool CLI 0.4.65/)).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Load apps' }))
+    const parent = screen.getByLabelText('Local apps parent folder')
+    await user.clear(parent)
+    await user.type(parent, '/tmp/retool-apps')
+    await user.click(screen.getByRole('button', { name: 'Clone app' }))
+
+    await waitFor(() => expect(api.cliClone).toHaveBeenCalledWith({
+      appId: 'app-uuid',
+      parentDir: '/tmp/retool-apps',
+      branch: undefined,
+      host: 'https://example.retool.com',
+    }))
+    expect(api.scan).toHaveBeenCalledWith('/tmp/retool-apps', 'cli')
+    expect(screen.getByText('Cloned Example App into /tmp/retool-apps/app-uuid, installed its dependencies, and made it available below.')).toBeInTheDocument()
+    expect(screen.queryByText('Last CLI result')).not.toBeInTheDocument()
+  })
+
+  it('shows and updates the metadata-only MCP connection in Settings', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByRole('heading', { name: 'Retool MCP metadata connection' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Retool MCP metadata connection' }).compareDocumentPosition(
+      screen.getByRole('tablist', { name: 'App source type' }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/Used only to load Retool group memberships/)).toBeInTheDocument()
+    const endpoint = screen.getByLabelText('MCP endpoint URL')
+    await user.clear(endpoint)
+    await user.type(endpoint, 'https://other.retool.com/mcp')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.saveMcpUrl).toHaveBeenCalledWith('https://other.retool.com/mcp'))
+
+    await user.click(screen.getByRole('button', { name: 'Re-authorize' }))
+    await waitFor(() => expect(api.authorize).toHaveBeenCalledOnce())
+  })
+
+  it('keeps Git source configuration in a separate Settings tab', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    await user.click(await screen.findByRole('tab', { name: 'Git' }))
+    const repository = screen.getByLabelText('Git apps repository directory')
+    expect(repository).toHaveValue('/git-repo')
+    await user.clear(repository)
+    await user.type(repository, '/repo/retool-ops')
+    await user.click(screen.getByRole('button', { name: 'Use Git repository' }))
+
+    await waitFor(() => expect(api.scan).toHaveBeenCalledWith('/repo/retool-ops', 'git'))
+  })
+
+  it('separates CLI checkouts and Git apps on the Apps page', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    const sourceTabs = await screen.findByRole('tablist', { name: 'App source' })
+    expect(within(sourceTabs).getByRole('tab', { name: 'CLI checkouts' })).toHaveAttribute('data-state', 'active')
+    expect(await screen.findByText(/Locally cloned Retool CLI apps/)).toBeInTheDocument()
+
+    await user.click(within(sourceTabs).getByRole('tab', { name: 'Git' }))
+    await waitFor(() => expect(api.scan).toHaveBeenCalledWith('/git-repo', 'git'))
+    expect(screen.getByText(/Protected Apps as Code sources/)).toBeInTheDocument()
+  })
+
+  it('pulls the current Retool CLI checkout', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Pull latest for Example App' }))
+
+    await waitFor(() => expect(api.cliPull).toHaveBeenCalledWith('/worktrees/main'))
+    expect(api.scan).toHaveBeenCalledWith('/repo', 'cli')
+  })
+
+  it('requires a message and confirmation before pushing a Retool preview', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Push preview for Example App' }))
+    const dialog = screen.getByRole('alertdialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Push preview' })
+    expect(confirm).toBeDisabled()
+    expect(api.cliPush).not.toHaveBeenCalled()
+
+    await user.type(within(dialog).getByLabelText('Push message for Example App'), 'Finish report filters')
+    await user.click(confirm)
+
+    await waitFor(() => expect(api.cliPush).toHaveBeenCalledWith(
+      '/worktrees/main',
+      'Finish report filters',
+      true,
+    ))
   })
 
   it('shows and updates the identity used by frontend and backend code', async () => {
@@ -118,6 +275,69 @@ describe('PanelApp', () => {
       expect.objectContaining({ email: 'other@example.com' }),
     ))
   })
+
+  it('opens the emulated user editor directly from the persistent header control', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    render(<PanelApp api={api} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit emulated user, currently Dev User' }))
+
+    expect(screen.getByRole('tabpanel', { name: 'Settings' })).toHaveAttribute('data-state', 'active')
+    expect(await screen.findByRole('dialog', { name: 'Mimic a Retool user' })).toBeInTheDocument()
+  })
+
+  it('uses CLI identity and manual group editing when MCP is not configured', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.status = vi.fn(async () => ({
+      mcpUrl: 'https://example.retool.com/mcp',
+      mcpConfigured: false,
+      cachedAuth: false,
+      connected: false,
+      repoDir: '/repo',
+      currentUser: { ...currentUser, groups: [] },
+    }))
+    api.syncCurrentUserFromCli = vi.fn(async () => ({
+      currentUser: { ...currentUser, fullName: 'CLI User', firstName: 'CLI', lastName: 'User', email: 'cli@example.com', groups: [] },
+    }))
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByText('CLI User')).toBeInTheDocument()
+    expect(api.syncCurrentUserFromCli).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
+    expect(await screen.findByRole('heading', { name: 'Groups (manual)' })).toBeInTheDocument()
+    expect(api.groups).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Add group' }))
+    await user.type(screen.getByLabelText('Group 1 name'), 'Local Operators')
+    await user.click(screen.getByRole('button', { name: 'Save emulated user' }))
+    await waitFor(() => expect(api.saveCurrentUser).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'cli@example.com',
+      groups: [{ id: 1, name: 'Local Operators' }],
+    })))
+  })
+
+  it('keeps MCP groups enabled when an older backend omits the configuration flag', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    api.status = vi.fn(async () => ({
+      mcpUrl: 'https://example.retool.com/mcp',
+      cachedAuth: true,
+      connected: false,
+      repoDir: '/repo',
+      currentUser,
+    }))
+    render(<PanelApp api={api} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Settings' }))
+    expect(await screen.findByText('Dev User')).toBeInTheDocument()
+    expect(api.syncCurrentUserFromCli).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Edit emulated user' }))
+    expect(await screen.findByLabelText('Retool groups')).toBeInTheDocument()
+    expect(api.groups).toHaveBeenCalledOnce()
+  })
+
 
   it('shows private local API definitions without exposing their contents', async () => {
     const user = userEvent.setup()
@@ -224,7 +444,6 @@ describe('PanelApp', () => {
     render(<PanelApp api={api} />)
 
     await user.click(screen.getByRole('tab', { name: /^Resources/ }))
-    await user.click(await screen.findByRole('button', { name: 'Load' }))
 
     expect(await screen.findByText('local — upload.openapi.yaml · #1234567890ab')).toBeInTheDocument()
   })
@@ -235,12 +454,12 @@ describe('PanelApp', () => {
     render(<PanelApp api={api} />)
 
     await user.click(screen.getByRole('tab', { name: 'Settings' }))
-    const repoInput = await screen.findByLabelText('Apps repository directory')
+    const repoInput = await screen.findByLabelText('Local apps parent folder')
     await user.clear(repoInput)
     await user.type(repoInput, '/repo')
-    await user.click(screen.getByRole('button', { name: 'Scan' }))
+    await user.click(screen.getByRole('button', { name: 'Use folder' }))
     await user.click(screen.getByRole('tab', { name: /^Apps/ }))
-    await user.selectOptions(await screen.findByLabelText('Worktree for Example App'), '/worktrees/feature')
+    await user.selectOptions(await screen.findByLabelText('Source for Example App'), '/worktrees/feature')
     await user.click(screen.getByRole('button', { name: 'Run Example App' }))
 
     expect(api.run).toHaveBeenCalledWith({
@@ -251,6 +470,7 @@ describe('PanelApp', () => {
       environment: 'staging',
       writes: false,
     })
+    expect(await screen.findByRole('link', { name: 'Open preview' })).toHaveAttribute('href', 'http://localhost:5174')
   })
 
   it('shows missing staging resources as direct Retool links', async () => {
@@ -307,10 +527,10 @@ describe('PanelApp', () => {
     const user = userEvent.setup()
     const api = fakeApi()
     const staleApp = { ...exampleApp, worktrees: undefined } as unknown as ScannedApp
-    api.scan = vi.fn(async () => ({ apps: [staleApp], repoDir: '/repo' }))
+    api.scan = vi.fn(async () => ({ apps: [staleApp], repoDir: '/repo', sourceMode: 'cli' as const }))
     render(<PanelApp api={api} />)
 
-    expect(await screen.findByRole('option', { name: 'no registered worktree' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'no app source found' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run Example App' })).toBeDisabled()
   })
 
@@ -325,7 +545,7 @@ describe('PanelApp', () => {
     await user.click(screen.getByRole('button', { name: 'Rescan' }))
 
     await waitFor(() => expect(api.scan).toHaveBeenCalledTimes(2))
-    expect(api.scan).toHaveBeenLastCalledWith('/repo')
+    expect(api.scan).toHaveBeenLastCalledWith('/repo', 'cli')
   })
 
   it('requires confirmation before an app can run with writes', async () => {
@@ -358,7 +578,7 @@ describe('PanelApp', () => {
         appPath: `${worktree.worktreePath}/apps-v2/Operations/Other App`,
       })),
     }
-    api.scan = vi.fn(async () => ({ apps: [exampleApp, otherApp], repoDir: '/repo' }))
+    api.scan = vi.fn(async () => ({ apps: [exampleApp, otherApp], repoDir: '/repo', sourceMode: 'cli' as const }))
     api.running = vi.fn(async () => ({ apps: [{
       name: 'Example App',
       appPath: exampleApp.path,

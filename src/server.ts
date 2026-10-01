@@ -35,6 +35,7 @@ export function buildAppAliases(appDir: string): Record<string, string> {
 export function discoverEndpoints(appDir: string): string[] {
   // Any *.ts under backend/** with a default export is an endpoint.
   return walkTs(join(appDir, 'backend'))
+    .filter((f) => !f.endsWith('.d.ts'))
     .filter((f) => /export\s+default/.test(readFileSync(f, 'utf8')))
     .map((f) => f.replace(/\.ts$/, '').split('/').pop() as string)
 }
@@ -145,7 +146,10 @@ export async function startServer(opts: {
     })
     const runner = createRunner({ appDir: opts.appDir, globals, user: currentUser() })
     try {
-      const result = await runner.run(endpoint, req.body?.params ?? {})
+      const execute = () => runner.run(endpoint, req.body?.params ?? {})
+      const result = opts.mcp.batchCalls
+        ? await opts.mcp.batchCalls(execute)
+        : await execute()
       res.json({ result })
     } catch (err: any) {
       res.status(400).json({ __error: true, error: String(err?.message ?? err) })

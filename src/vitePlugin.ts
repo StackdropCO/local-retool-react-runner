@@ -20,7 +20,9 @@ async function post(path, params) {
   return {
     data: state.data,
     isFetching: state.isFetching,
+    loading: state.isFetching,
     error: state.error,
+    dataAccessErrors: [],
     trigger: (params, _opts) => {
       setState((s) => ({ ...s, isFetching: true }))
       const result = post('${rpcBase}/${e}', params)
@@ -67,6 +69,10 @@ export function hooksVirtualPlugin(opts: { appDir: string; endpoints: string[]; 
   const currentUserVirtualId = '\0virtual:local-mcp-runner-current-user'
   return {
     name: 'local-mcp-runner-hooks',
+    // Retool's generated hook files exist on disk. Resolve them before Vite's
+    // filesystem plugin turns imports into /@fs URLs and serves the local
+    // type-check stubs (whose trigger intentionally returns undefined).
+    enforce: 'pre',
     resolveId(id) {
       const clean = id.replace(/\.tsx?$/, '')
       if (marker.test(clean)) return virtualId
