@@ -2,12 +2,15 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readConfig } from './config.js'
 import { connectRetoolCli } from './cliClient.js'
+import { createAutoClient } from './autoClient.js'
+import { connectMcp, hasCachedAuth } from './mcpClient.js'
 import { startServer } from './server.js'
 import { ensureFrontendDeps } from './deps.js'
 import { repoRoot, validateWorktreeTarget } from './git.js'
 import { resolveAppDirectory } from './scan.js'
 import { parseRetoolEnvironment } from './environment.js'
 import { resolveCurrentUser } from './currentUser.js'
+import { MCP_URL } from './paths.js'
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -48,18 +51,31 @@ async function main() {
     process.exit(1)
   }
   console.log(`[runner] app=${appDir}`)
-  console.log('[runner] transport=retool-cli (MCP disabled)')
   console.log(`[runner] environment=${environmentName}`)
   console.log(`[runner] mode=${writes ? 'READ-WRITE' : 'read-only'} (use --writes to enable writes)`)
   if (exploreCheckoutDir) console.log(`[runner] retool-explore=${exploreCheckoutDir}`)
   ensureFrontendDeps(appDir)
-  const mcp = await connectRetoolCli(exploreCheckoutDir, { allowMutative: writes })
+  const cli = await connectRetoolCli(exploreCheckoutDir, { allowMutative: writes })
+  const mcpUrl = arg('mcp-url', config.mcpUrl || MCP_URL)!
+  let resources = cli
+  if (mcpUrl && hasCachedAuth(mcpUrl)) {
+    try {
+      const mcp = await connectMcp(mcpUrl)
+      resources = createAutoClient(cli, mcp)
+      console.log('[runner] transport=auto (safe reads: MCP; writes/ambiguous: Retool CLI)')
+    } catch (error) {
+      console.warn(`[runner] MCP unavailable before startup; using Retool CLI: ${String((error as Error)?.message ?? error)}`)
+      console.log('[runner] transport=retool-cli')
+    }
+  } else {
+    console.log('[runner] transport=retool-cli (authorize MCP in Settings to enable auto routing)')
+  }
   const { url } = await startServer({
     appDir,
     port,
     writes,
     environmentName,
-    mcp,
+    mcp: resources,
     exploreCheckoutDir,
     // Read on each request so changing the persona in the panel does not
     // require restarting backend query execution.
