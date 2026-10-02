@@ -313,20 +313,102 @@ describe('panel server', () => {
     })).toBe(matchingCheckout)
   })
 
-  it('does not run Git source through another app\'s CLI checkout', () => {
+  it('does not use a CLI bridge that lacks the Git app resources', () => {
     const root = mkdtempSync(join(tmpdir(), 'panel-hybrid-mismatch-'))
     temporaryDirectories.push(root)
     const gitApp = join(root, 'git-app')
     const unrelatedCheckout = join(root, 'unrelated-cli-app')
     for (const [path, uuid] of [[gitApp, 'git-uuid'], [unrelatedCheckout, 'other-uuid']] as const) {
       mkdirSync(join(path, 'frontend'), { recursive: true })
-      writeFileSync(join(path, 'package.json'), JSON.stringify({ retool: { app: { name: 'App', uuid } } }))
+      writeFileSync(join(path, 'package.json'), JSON.stringify({
+        retool: { app: {
+          name: 'App',
+          uuid,
+          ...(path === gitApp ? {
+            resourceReferencesByFile: {
+              '/backend/getData.ts': [{ name: 'required-resource', displayName: 'Warehouse', type: 'postgresql' }],
+            },
+          } : {}),
+        } },
+      }))
       writeFileSync(join(path, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
     }
     mkdirSync(join(unrelatedCheckout, '.retool'), { recursive: true })
-    writeFileSync(join(unrelatedCheckout, '.retool', 'app.json'), '{}')
+    writeFileSync(join(unrelatedCheckout, '.retool', 'app.json'), JSON.stringify({ host: 'https://example.retool.com' }))
+    writeFileSync(join(unrelatedCheckout, '.retool', 'resource-cache.json'), JSON.stringify({ resources: [] }))
 
-    expect(resolveExploreCheckoutForApp(gitApp, { exploreCheckoutDir: unrelatedCheckout })).toBeUndefined()
+    expect(resolveExploreCheckoutForApp(gitApp, {
+      mcpUrl: 'https://example.retool.com/mcp',
+      exploreCheckoutDir: unrelatedCheckout,
+    })).toBeUndefined()
+  })
+
+  it('isolates Git source from a same-org CLI bridge with matching resources', () => {
+    const root = mkdtempSync(join(tmpdir(), 'panel-resource-bridge-'))
+    temporaryDirectories.push(root)
+    const gitApp = join(root, 'git-app')
+    const resourceBridge = join(root, 'resource-bridge')
+    mkdirSync(join(gitApp, 'frontend'), { recursive: true })
+    mkdirSync(join(resourceBridge, '.retool'), { recursive: true })
+    writeFileSync(join(gitApp, 'package.json'), JSON.stringify({
+      retool: { app: {
+        name: 'Git App',
+        uuid: 'git-uuid',
+        resourceReferencesByFile: {
+          '/backend/getData.ts': [{ name: 'databricks-uuid', displayName: 'Databricks', type: 'databricks' }],
+        },
+      } },
+    }))
+    writeFileSync(join(gitApp, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    writeFileSync(join(resourceBridge, 'package.json'), JSON.stringify({
+      retool: { app: { name: 'Bridge App', uuid: 'bridge-uuid' } },
+    }))
+    writeFileSync(join(resourceBridge, '.retool', 'app.json'), JSON.stringify({ host: 'https://example.retool.com' }))
+    writeFileSync(join(resourceBridge, '.retool', 'resource-cache.json'), JSON.stringify({
+      resources: [{ name: 'databricks-uuid', displayName: 'Databricks', type: 'databricks', symbols: ['databricks'] }],
+    }))
+
+    expect(resolveExploreCheckoutForApp(gitApp, {
+      mcpUrl: 'https://example.retool.com/mcp',
+      exploreCheckoutDir: resourceBridge,
+    })).toBe(resourceBridge)
+  })
+
+  it('reports whether each Git app has its matching CLI runtime checkout', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'panel-git-preflight-'))
+    temporaryDirectories.push(root)
+    const gitRoot = join(root, 'git')
+    const cliRoot = join(root, 'cli')
+    const readyApp = join(gitRoot, 'apps-v2', 'Group', 'Ready App')
+    const missingApp = join(gitRoot, 'apps-v2', 'Group', 'Missing App')
+    const readyCheckout = join(cliRoot, 'ready-uuid')
+    for (const [path, name, uuid] of [
+      [readyApp, 'Ready App', 'ready-uuid'],
+      [missingApp, 'Missing App', 'missing-uuid'],
+      [readyCheckout, 'Ready App', 'ready-uuid'],
+    ] as const) {
+      mkdirSync(join(path, 'frontend'), { recursive: true })
+      writeFileSync(join(path, 'package.json'), JSON.stringify({ retool: { app: { name, uuid } } }))
+      writeFileSync(join(path, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
+    }
+    mkdirSync(join(readyCheckout, '.retool'), { recursive: true })
+    writeFileSync(join(readyCheckout, '.retool', 'app.json'), '{}')
+    const configFile = join(root, 'panel-config.json')
+    writeFileSync(configFile, JSON.stringify({ cliAppsDir: cliRoot }))
+    panel = await createPanelServer(0, { configFile })
+
+    const response = await fetch(`${panel.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repoDir: gitRoot, sourceMode: 'git' }),
+    })
+
+    expect(response.status).toBe(200)
+    const payload = await response.json() as { apps: Array<{ name: string; uuid: string; cliCheckoutAvailable: boolean }> }
+    expect(payload.apps).toEqual([
+      expect.objectContaining({ name: 'Missing App', uuid: 'missing-uuid', cliCheckoutAvailable: false }),
+      expect.objectContaining({ name: 'Ready App', uuid: 'ready-uuid', cliCheckoutAvailable: true }),
+    ])
   })
 
   it('runs clone and pull through the Retool CLI and saves the cloned checkout', async () => {

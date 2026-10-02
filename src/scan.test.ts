@@ -36,14 +36,14 @@ describe('scanApps worktree targets', () => {
     temporaryDirectories.push(checkout)
     mkdirSync(join(checkout, 'frontend'), { recursive: true })
     mkdirSync(join(checkout, '.retool'), { recursive: true })
-    writeFileSync(join(checkout, 'package.json'), JSON.stringify({ retool: { app: { name: 'CLI App' } } }))
+    writeFileSync(join(checkout, 'package.json'), JSON.stringify({ retool: { app: { name: 'CLI App', uuid: 'cli-app-uuid' } } }))
     writeFileSync(join(checkout, 'frontend', 'App.tsx'), 'export default function App() { return null }\n')
     writeFileSync(join(checkout, '.retool', 'app.json'), '{}')
 
     const [app] = scanApps(checkout)
 
     expect(resolveAppDirectory(checkout)).toBe(realpathSync(checkout))
-    expect(app).toMatchObject({ name: 'CLI App', path: realpathSync(checkout), branch: null })
+    expect(app).toMatchObject({ name: 'CLI App', uuid: 'cli-app-uuid', path: realpathSync(checkout), branch: null })
     expect(app.worktrees).toEqual([{
       worktreePath: realpathSync(checkout),
       appPath: realpathSync(checkout),

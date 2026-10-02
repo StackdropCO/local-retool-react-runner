@@ -9,6 +9,7 @@ type DiscoveredAppsProps = {
   configured: boolean
   sourceMode: 'cli' | 'git'
   onConfigure(sourceMode: 'cli' | 'git'): void
+  onRefreshCli(appId: string): Promise<void>
   onRun(input: RunInput): Promise<RunResult>
   onPull(checkoutDir: string): Promise<unknown>
   onPush(checkoutDir: string, message: string): Promise<unknown>
@@ -21,6 +22,7 @@ export function DiscoveredApps({
   configured,
   sourceMode,
   onConfigure,
+  onRefreshCli,
   onRun,
   onPull,
   onPush,
@@ -53,7 +55,19 @@ export function DiscoveredApps({
   return (
     <div className="space-y-3">
       {apps.length ? (
-        apps.map((app) => <AppCard key={app.path} app={app} onRun={onRun} onPull={onPull} onPush={onPush} />)
+        apps.map((app) => (
+          <AppCard
+            key={app.path}
+            app={app}
+            sourceMode={sourceMode}
+            onRefreshCli={() => app.uuid
+              ? onRefreshCli(app.uuid)
+              : Promise.reject(new Error('This app has no Retool UUID, so its preview bridge cannot be matched.'))}
+            onRun={onRun}
+            onPull={onPull}
+            onPush={onPush}
+          />
+        ))
       ) : (
         <Card>
           <CardContent className="pt-5">

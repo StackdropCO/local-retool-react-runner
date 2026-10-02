@@ -104,7 +104,59 @@ function isCliCheckout(appDir: string): boolean {
   return existsSync(join(appDir, '.retool', 'app.json'))
 }
 
-/** Resolve the CLI resource checkout for this exact app, never another app. */
+function checkoutHost(checkoutDir: string): string | null {
+  try {
+    const host = JSON.parse(readFileSync(join(checkoutDir, '.retool', 'app.json'), 'utf8'))?.host
+    return typeof host === 'string' && host.trim() ? new URL(host).origin : null
+  } catch {
+    return null
+  }
+}
+
+function checkoutResourceNames(checkoutDir: string): Set<string> | null {
+  try {
+    const resources = JSON.parse(readFileSync(join(checkoutDir, '.retool', 'resource-cache.json'), 'utf8'))?.resources
+    if (!Array.isArray(resources)) return null
+    return new Set(resources.flatMap((resource: { name?: unknown }) => (
+      typeof resource?.name === 'string' ? [resource.name] : []
+    )))
+  } catch {
+    return null
+  }
+}
+
+function configuredHost(config: Config): string | null {
+  if (config.mcpUrl) {
+    try {
+      return new URL(config.mcpUrl).origin
+    } catch {
+      /* use the configured checkout host below */
+    }
+  }
+  return config.exploreCheckoutDir ? checkoutHost(config.exploreCheckoutDir) : null
+}
+
+function resourceBridgeScore(appPath: string, checkoutDir: string, config: Config): number | null {
+  if (!isCliCheckout(checkoutDir)) return null
+  const expectedHost = configuredHost(config)
+  const candidateHost = checkoutHost(checkoutDir)
+  if (expectedHost && candidateHost && expectedHost !== candidateHost) return null
+  const available = checkoutResourceNames(checkoutDir)
+  if (!available) return null
+  let required: string[]
+  try {
+    required = readResourceRefs(appPath).map((resource) => resource.name)
+  } catch {
+    return null
+  }
+  return required.every((resourceName) => available.has(resourceName)) ? available.size : null
+}
+
+/**
+ * Keep app source and resource execution isolated. Prefer an exact app checkout,
+ * then reuse a same-org CLI checkout whose generated cache covers every resource
+ * declared by the Git app. The bridge never becomes the app's editable source.
+ */
 export function resolveExploreCheckoutForApp(appPath: string, config: Config): string | undefined {
   if (isCliCheckout(appPath)) return appPath
 
@@ -117,12 +169,25 @@ export function resolveExploreCheckoutForApp(appPath: string, config: Config): s
   }
 
   const cliRoot = config.cliAppsDir
-  if (!cliRoot || !existsSync(cliRoot)) return undefined
+  if (!cliRoot || !existsSync(cliRoot)) {
+    return configuredCheckout && resourceBridgeScore(appPath, configuredCheckout, config) !== null
+      ? configuredCheckout
+      : undefined
+  }
 
   const canonicalCheckout = join(cliRoot, uuid)
   if (isCliCheckout(canonicalCheckout) && appUuid(canonicalCheckout) === uuid) return canonicalCheckout
 
-  return findAppDirs(cliRoot).find((candidate) => isCliCheckout(candidate) && appUuid(candidate) === uuid)
+  const candidates = findAppDirs(cliRoot).filter((candidate) => isCliCheckout(candidate))
+  const exact = candidates.find((candidate) => appUuid(candidate) === uuid)
+  if (exact) return exact
+
+  return [...new Set([configuredCheckout, ...candidates].filter((candidate): candidate is string => Boolean(candidate)))]
+    .flatMap((candidate) => {
+      const score = resourceBridgeScore(appPath, candidate, config)
+      return score === null ? [] : [{ candidate, score }]
+    })
+    .sort((a, b) => a.score - b.score || a.candidate.localeCompare(b.candidate))[0]?.candidate
 }
 
 export function panelViteCacheDir(port: number, instanceId: number): string {
@@ -568,14 +633,18 @@ export async function createPanelServer(port: number, options: PanelServerOption
       return res.status(400).json({ error: `directory not found: ${raw} (use an absolute local apps parent folder)` })
     }
     try {
-      const apps = scanApps(repoDir)
+      const scannedApps = scanApps(repoDir)
       const isCliCheckout = existsSync(join(repoDir, '.retool', 'app.json'))
-      writePanelConfig({
+      const panelConfig = writePanelConfig({
         repoDir, // backward-compatible name for the last app source directory
         sourceMode,
         ...(sourceMode === 'git' ? { gitRepoDir: repoDir } : { cliAppsDir: repoDir }),
         ...(isCliCheckout ? { exploreCheckoutDir: repoDir } : {}),
       })
+      const apps = scannedApps.map((app) => ({
+        ...app,
+        cliCheckoutAvailable: Boolean(resolveExploreCheckoutForApp(app.path, panelConfig)),
+      }))
       res.json({ apps, repoDir, sourceMode })
     } catch (e: any) {
       res.status(400).json({ error: String(e?.message ?? e) })
