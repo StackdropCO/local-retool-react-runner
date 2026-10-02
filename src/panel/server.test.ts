@@ -143,7 +143,7 @@ describe('panel server', () => {
     })
   })
 
-  it('loads the Retool group catalog through the metadata-only provider', async () => {
+  it('loads the Retool group catalog through MCP', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'panel-groups-'))
     temporaryDirectories.push(directory)
     const configFile = join(directory, 'config.json')
@@ -166,7 +166,7 @@ describe('panel server', () => {
     expect(requestedUrls).toEqual(['https://example.retool.com/mcp'])
   })
 
-  it('saves and authorizes the metadata-only MCP connection', async () => {
+  it('saves and authorizes the MCP connection', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'panel-mcp-settings-'))
     temporaryDirectories.push(directory)
     const configFile = join(directory, 'config.json')

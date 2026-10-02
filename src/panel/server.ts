@@ -288,13 +288,13 @@ export type PanelServer = {
 export type PanelServerOptions = {
   localResourceDirectory?: string
   configFile?: string
-  /** Test seam for the metadata-only Retool group directory. */
+  /** Test seam for the Retool group directory. */
   loadGroups?: (mcpUrl: string) => Promise<RetoolGroup[]>
   /** Test seam for the allowed auth/list/clone/pull/push-preview Retool CLI commands. */
   runCli?: RetoolCliRunner
   /** Test seam for installing a newly cloned checkout's locked dependencies. */
   installDependencies?: CheckoutInstaller
-  /** Test seam for establishing and caching the metadata-only MCP authorization. */
+  /** Test seam for establishing and caching the MCP authorization. */
   authorizeMcp?: (mcpUrl: string) => Promise<void>
 }
 
@@ -364,7 +364,7 @@ export async function createPanelServer(port: number, options: PanelServerOption
       mcpConfigured: Boolean(panelConfig.mcpUrl),
       cachedAuth: hasCachedAuth(mcpUrl),
       connected: false,
-      runtimeTransport: 'retool-cli',
+      runtimeTransport: hasCachedAuth(mcpUrl) ? 'auto' : 'retool-cli',
       repoDir: panelConfig.repoDir || panelConfig.exploreCheckoutDir || '',
       cliAppsDir: panelConfig.cliAppsDir || (panelConfig.sourceMode !== 'git' ? panelConfig.repoDir : '') || '',
       gitRepoDir: panelConfig.gitRepoDir || (panelConfig.sourceMode === 'git' ? panelConfig.repoDir : '') || '',
@@ -446,8 +446,9 @@ export async function createPanelServer(port: number, options: PanelServerOption
     }
   })
 
-  // MCP is metadata-only: it supplies the group directory for local user
-  // emulation. App source, execution, and preview pushes remain CLI-backed.
+  // MCP supplies the group directory and the persistent fast path for calls
+  // the runtime has positively classified as read-only. App source and preview
+  // pushes remain CLI-backed; writes and ambiguous calls execute through CLI.
   app.post('/api/mcp-url', (req, res) => {
     try {
       const mcpUrl = String(req.body?.mcpUrl ?? '').trim()

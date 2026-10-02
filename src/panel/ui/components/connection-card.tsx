@@ -36,9 +36,9 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Retool MCP metadata connection</CardTitle>
+        <CardTitle>Retool MCP connection</CardTitle>
         <CardDescription>
-          Used only to load Retool group memberships for the emulated user. Apps, resources, and previews continue to use the Retool CLI.
+          Keeps supported read-only resource calls fast and loads group memberships for the emulated user. Plain REST, writes, ambiguous calls, app sources, and previews stay on the Retool CLI.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -70,7 +70,7 @@ export function ConnectionCard({ status, onSave, onAuthorize }: ConnectionCardPr
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          {status?.cachedAuth ? 'Authorization is saved for group discovery.' : 'Not authorized. Group discovery will require MCP authorization.'}
+          {status?.cachedAuth ? 'Authorization is saved. New previews use automatic routing.' : 'Not authorized. Resource execution stays on the Retool CLI.'}
         </p>
         {error && (
           <Alert variant="destructive">

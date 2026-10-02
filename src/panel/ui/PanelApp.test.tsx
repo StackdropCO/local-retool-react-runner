@@ -174,17 +174,17 @@ describe('PanelApp', () => {
     expect(screen.queryByText('Last CLI result')).not.toBeInTheDocument()
   })
 
-  it('shows and updates the metadata-only MCP connection in Settings', async () => {
+  it('shows and updates the MCP connection in Settings', async () => {
     const user = userEvent.setup()
     const api = fakeApi()
     render(<PanelApp api={api} />)
 
     await user.click(screen.getByRole('tab', { name: 'Settings' }))
-    expect(await screen.findByRole('heading', { name: 'Retool MCP metadata connection' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Retool MCP metadata connection' }).compareDocumentPosition(
+    expect(await screen.findByRole('heading', { name: 'Retool MCP connection' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Retool MCP connection' }).compareDocumentPosition(
       screen.getByRole('tablist', { name: 'App source type' }),
     ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText(/Used only to load Retool group memberships/)).toBeInTheDocument()
+    expect(screen.getByText(/Keeps supported read-only resource calls fast/)).toBeInTheDocument()
     const endpoint = screen.getByLabelText('MCP endpoint URL')
     await user.clear(endpoint)
     await user.type(endpoint, 'https://other.retool.com/mcp')

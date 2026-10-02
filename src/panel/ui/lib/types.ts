@@ -10,7 +10,7 @@ export interface PanelStatus {
   localResources?: LocalResourceSummary[]
   localResourceError?: string
   currentUser?: CurrentUser
-  runtimeTransport?: 'retool-cli'
+  runtimeTransport?: 'auto' | 'retool-cli'
   exploreCheckoutDir?: string
 }
 

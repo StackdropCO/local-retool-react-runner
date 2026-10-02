@@ -497,11 +497,14 @@ ID, email, name, metadata, and group memberships, then reload an open preview.
 
 Opening the editor loads the Retool group directory through the MCP's read-only
 `retool_list_groups` tool so memberships can use the org's real group IDs and
-names. This is metadata discovery only: app SQL, REST, Fleet, and Slack calls
-remain exclusively on `retool resource explore`, with no MCP execution fallback.
-The group lookup uses the MCP OAuth cache and may open the one-time browser flow
-if no token is cached. Configure the metadata endpoint and authorize it from
-**Settings → Retool MCP metadata connection**.
+names. The same persistent connection is the fast path for resource operations
+the runner has positively classified as read-only **and** whose generated
+resource type the MCP TypeScript executor supports. Plain REST resources remain
+on `retool resource explore`, even for `GET`, because MCP refuses base-URL-only
+REST bindings. Writes, unsupported resources, and ambiguous calls also remain
+on CLI; the runner never retries an attempted MCP execution through CLI.
+Configure and authorize the endpoint from
+**Settings → Retool MCP connection**.
 
 When no MCP endpoint has been configured, the panel synchronizes the emulated
 user's name and email from `retool whoami --json`. Group membership is then
@@ -522,9 +525,12 @@ contents may be sensitive.
    modules that post to `/rpc/:endpoint`.
 3. The RPC route executes the app's own `backend/<group>/<endpoint>.ts` locally.
 4. Resource globals declared by that endpoint are injected at runtime.
-5. Every remote resource call runs through `retool resource explore`, using
-   the credentials and generated bindings from the configured CLI checkout.
-   There is no MCP execution fallback.
+5. Verified reads on MCP-compatible generated resource types run over the
+   persistent Retool MCP connection when it has already been authorized.
+   Plain REST, writes, unsupported resources, and ambiguous operations run
+   through `retool resource explore`, using the credentials and generated
+   bindings from the configured CLI checkout. If MCP is unavailable at startup,
+   the runner stays entirely on CLI; it never retries after execution starts.
 6. Calls started together by one RPC request (for example, calls inside the
    same `Promise.all`) are coalesced into one CLI invocation. Calls separated
    by an `await` remain separate because the later code depends on the earlier
