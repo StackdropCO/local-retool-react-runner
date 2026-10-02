@@ -91,7 +91,22 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
       sourceMode: result.sourceMode,
       ...(result.sourceMode === 'cli' ? { cliAppsDir: result.repoDir } : { gitRepoDir: result.repoDir }),
     } : current)
+    return result
   }, [api])
+
+  const refreshCliBridge = useCallback(async (appId: string) => {
+    const checkoutDir = status?.exploreCheckoutDir?.trim()
+    const gitRepoDir = status?.gitRepoDir?.trim()
+    if (!checkoutDir) throw new Error('Configure one CLI resource checkout in Settings before refreshing resources.')
+    if (!gitRepoDir) throw new Error('The Git apps repository is not configured.')
+    await api.cliPull(checkoutDir)
+    const result = await scan(gitRepoDir, 'git')
+    await refreshStatus()
+    const refreshedApp = result.apps.find((app) => app.uuid === appId)
+    if (!refreshedApp?.cliCheckoutAvailable) {
+      throw new Error('The CLI resource bridge refreshed, but it still does not expose every resource required by this app.')
+    }
+  }, [api, refreshStatus, scan, status?.exploreCheckoutDir, status?.gitRepoDir])
 
   useEffect(() => {
     void Promise.all([refreshStatus(), refreshRunning(), refreshResources()])
@@ -294,6 +309,7 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                   loading={apps === null && Boolean(activeAppsRoot)}
                   configured={Boolean(activeAppsRoot)}
                   sourceMode={activeSourceMode}
+                  onRefreshCli={refreshCliBridge}
                   onConfigure={(sourceMode) => {
                     setSettingsSource(sourceMode === 'cli' ? 'cli-source' : 'git-source')
                     setActiveSection('settings')

@@ -60,7 +60,8 @@ pushes Git changes on its own and cannot publish an app live.
 - Scans every Retool CLI checkout below that parent folder.
 - Keeps separate **CLI checkouts** and **Git** tabs on both Settings and Apps.
 - Scans a protected Apps as Code repository and displays its Git worktree metadata.
-- Matches each Git app to its own CLI checkout by Retool app UUID.
+- Keeps Git app source isolated from a same-org CLI resource bridge whose
+  generated cache covers every resource UUID the app declares.
 - Selects staging or production and read-only or write-enabled execution per app.
 - Confirms production launches and write access explicitly.
 - Starts, opens, monitors, and stops independent app previews.
@@ -84,9 +85,9 @@ pushes Git changes on its own and cannot publish an app live.
 
 ### CLI workflow and automation
 
-- Uses an independent `retool clone` checkout per app for generated resource
-  bindings and Retool credentials. For CLI apps it is also the editable source;
-  for protected apps the editable source remains in Git.
+- Uses `retool clone` checkouts for generated resource bindings and Retool
+  credentials. For CLI apps the checkout is also editable source; protected
+  apps remain in Git and may reuse any same-org checkout covering their resources.
 - Makes clone, pull, and preview push explicit panel actions; live publishing
   remains outside the runner.
 - Validates existing Git worktrees without creating or switching them.
@@ -118,7 +119,7 @@ truth and delivery steps.
 | Use for | Apps developed directly through Retool CLI | Apps whose source is managed in Apps as Code Git |
 | Source of truth | The folder created by `retool clone` | The selected Git branch or worktree |
 | Panel view | **Apps → CLI checkouts** | **Apps → Git** |
-| Retool bridge | The same CLI checkout | A separate CLI checkout with the same Retool app UUID |
+| Retool bridge | The same CLI checkout | A same-org CLI checkout covering all declared resource UUIDs |
 | Get remote changes | **Pull** on the app card or `retool pull` | Git pull/fetch through your terminal or coding agent |
 | Deliver changes | **Push preview** or `retool push`; never live publish | Commit and push through Git; follow the protected-app release process |
 
@@ -181,8 +182,8 @@ For a CLI app:
 For a protected Git app:
 
 1. Under **Settings → Git**, select the Apps as Code repository.
-2. Clone the same app once under **Settings → CLI checkouts** so the runner has
-   its Retool credentials and generated resource bindings.
+2. Keep at least one same-org checkout under **Settings → CLI checkouts**. The
+   runner automatically selects one whose generated cache covers the app resources.
 3. Open **Apps → Git**, select the desired existing branch or worktree, then choose **Run**.
 4. Edit, commit, and push through Git or your coding agent. The runner does not
    perform Git pushes.
@@ -330,15 +331,16 @@ instead of silently attaching to different code.
 Each worktree gets an independent runner process and port, so several branches
 can be previewed concurrently. From the CLI, pass the app path inside the target
 worktree. `--branch <name>` validates that existing worktree; it does not create
-or switch one. At preview startup, the runner reads the app UUID and selects
-only the CLI checkout with that same UUID. If no match exists, the panel asks
-you to clone that app under **Settings → CLI checkouts** rather than borrowing
-another app's generated resources.
+or switch one. At preview startup, the runner prefers the same app's CLI
+checkout, then selects a same-host checkout only when its generated resource
+cache covers every resource UUID declared by the Git app. The checkout supplies
+execution bindings and credentials only; source always remains in the selected
+worktree.
 
 ## Environments and write mode
 
 `--environment` accepts `staging` or `production` and defaults to `staging`.
-The runner passes the selected value to Retool MCP as `environmentName` for
+The runner passes the selected value to Retool CLI as `environmentName` for
 every non-local resource call.
 
 Before opening a preview port, the runner asks Retool to resolve all required

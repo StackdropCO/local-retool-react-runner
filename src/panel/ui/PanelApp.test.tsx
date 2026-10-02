@@ -225,6 +225,35 @@ describe('PanelApp', () => {
     expect(screen.getByText(/Protected Apps as Code sources/)).toBeInTheDocument()
   })
 
+  it('refreshes a stale Git resource bridge in the background', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi()
+    let gitScans = 0
+    api.scan = vi.fn(async (repoDir: string, sourceMode: 'cli' | 'git' = 'cli') => ({
+      apps: [{
+        ...exampleApp,
+        uuid: 'app-uuid',
+        cliCheckoutAvailable: sourceMode !== 'git' || ++gitScans > 1,
+      }],
+      repoDir,
+      sourceMode,
+    }))
+    render(<PanelApp api={api} />)
+
+    const sourceTabs = await screen.findByRole('tablist', { name: 'App source' })
+    await user.click(within(sourceTabs).getByRole('tab', { name: 'Git' }))
+
+    expect(await screen.findByText('Resource bridge needs refresh.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Example App' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Refresh resources for Example App' }))
+
+    await waitFor(() => expect(api.cliPull).toHaveBeenCalledWith('/retool/checkout'))
+    expect(api.scan).toHaveBeenCalledWith('/git-repo', 'git')
+    expect(api.cliClone).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: 'Run Example App' })).toBeInTheDocument()
+    expect(screen.getByRole('tabpanel', { name: /Apps/ })).toHaveAttribute('data-state', 'active')
+  })
+
   it('pulls the current Retool CLI checkout', async () => {
     const user = userEvent.setup()
     const api = fakeApi()

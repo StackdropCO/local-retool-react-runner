@@ -12,6 +12,7 @@ export type AppWorktree = {
 }
 
 export type ScannedApp = {
+  uuid?: string
   name: string
   path: string
   group: string
@@ -152,6 +153,7 @@ export function scanApps(repoDir: string): ScannedApp[] {
             cliCheckout: existsSync(join(path, '.retool', 'app.json')),
           }]
       return {
+        uuid: typeof app.uuid === 'string' ? app.uuid : undefined,
         name: app.name ?? parts[parts.length - 1],
         path: canonical(path),
         group: parts[parts.length - 2] ?? '',

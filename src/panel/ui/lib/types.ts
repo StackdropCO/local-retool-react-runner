@@ -54,6 +54,8 @@ export interface Resource {
 }
 
 export interface ScannedApp {
+  uuid?: string
+  cliCheckoutAvailable?: boolean
   name: string
   group: string
   path: string

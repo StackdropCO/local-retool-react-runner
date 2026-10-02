@@ -18,6 +18,8 @@ import { Switch } from './ui/switch'
 
 type AppCardProps = {
   app: ScannedApp
+  sourceMode: 'cli' | 'git'
+  onRefreshCli(): Promise<void>
   onRun(input: RunInput): Promise<RunResult>
   onPull(checkoutDir: string): Promise<unknown>
   onPush(checkoutDir: string, message: string): Promise<unknown>
@@ -37,7 +39,7 @@ function branchLabel(name: string, current?: string | null) {
 
 const resultText = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 
-export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
+export function AppCard({ app, sourceMode, onRefreshCli, onRun, onPull, onPush }: AppCardProps) {
   const worktrees = app.worktrees ?? NO_WORKTREES
   const initialWorktree = worktrees.find((worktree) => worktree.appPath === app.path)
     ?? worktrees.find((worktree) => worktree.branch === app.branch)
@@ -48,6 +50,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [productionConfirmOpen, setProductionConfirmOpen] = useState(false)
   const [running, setRunning] = useState(false)
+  const [refreshingCli, setRefreshingCli] = useState(false)
   const [pushOpen, setPushOpen] = useState(false)
   const [pushMessage, setPushMessage] = useState('')
   const [pushing, setPushing] = useState(false)
@@ -64,6 +67,7 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
   }, [app.path, app.branch, worktrees])
 
   const selectedWorktree = worktrees.find((worktree) => worktree.worktreePath === worktreePath)
+  const needsCliCheckout = sourceMode === 'git' && app.cliCheckoutAvailable === false
   const resourceSummary = app.resources.length
     ? app.resources.map((resource) => resource.displayName).join(', ')
     : 'No resources'
@@ -100,6 +104,21 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
   const requestRun = () => {
     if (environment === 'production') setProductionConfirmOpen(true)
     else void run()
+  }
+
+  const refreshCli = async () => {
+    setRefreshingCli(true)
+    setError(null)
+    try {
+      await onRefreshCli()
+    } catch (cause) {
+      setError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        missingResources: [],
+      })
+    } finally {
+      setRefreshingCli(false)
+    }
   }
 
   const push = async () => {
@@ -185,16 +204,34 @@ export function AppCard({ app, onRun, onPull, onPush }: AppCardProps) {
               </Button>
             </>
           )}
-          <Button
-            size="sm"
-            onClick={requestRun}
-            disabled={running || !selectedWorktree}
-            aria-label={`Run ${app.name}`}
-          >
-            {running ? 'Starting…' : 'Run'}
-          </Button>
+          {needsCliCheckout ? (
+            <Button
+              size="sm"
+              onClick={() => void refreshCli()}
+              disabled={refreshingCli}
+              aria-label={`Refresh resources for ${app.name}`}
+            >
+              {refreshingCli ? 'Refreshing…' : 'Refresh resources'}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={requestRun}
+              disabled={running || !selectedWorktree}
+              aria-label={`Run ${app.name}`}
+            >
+              {running ? 'Starting…' : 'Run'}
+            </Button>
+          )}
         </div>
       </div>
+
+      {needsCliCheckout && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+          <p><span className="font-semibold">Resource bridge needs refresh.</span> One click refreshes CLI-generated bindings in the background; Git source stays untouched.</p>
+        </div>
+      )}
 
       <div className="mt-3 grid items-end gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
         <label className="min-w-0 space-y-1">
