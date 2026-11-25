@@ -10,6 +10,7 @@ import { CurrentUserCard } from './components/current-user-card'
 import { RetoolCliCard } from './components/retool-cli-card'
 import { RepositoryCard } from './components/repository-card'
 import { ConnectionCard } from './components/connection-card'
+import { WorkflowCanvas } from './components/workflow-canvas'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Input } from './components/ui/input'
 import { Button } from './components/ui/button'
@@ -32,7 +33,7 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
   const [resourcesLoading, setResourcesLoading] = useState(true)
   const [appsBySource, setAppsBySource] = useState<Record<'cli' | 'git', ScannedApp[] | null>>({ cli: null, git: null })
   const [appSourceMode, setAppSourceMode] = useState<'cli' | 'git' | null>(null)
-  const [activeSection, setActiveSection] = useState('apps')
+  const [activeSection, setActiveSection] = useState(() => new URLSearchParams(window.location.search).has('workflow') ? 'workflows' : 'apps')
   const [settingsSource, setSettingsSource] = useState<'cli-source' | 'git-source'>('cli-source')
   const [currentUserOpen, setCurrentUserOpen] = useState(false)
   const [appQuery, setAppQuery] = useState('')
@@ -229,6 +230,9 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
               <TabsTrigger value="resources" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
                 Resources{resources !== null ? <span className="ml-1.5">{resources.length}</span> : null}
               </TabsTrigger>
+              <TabsTrigger value="workflows" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
+                Workflows
+              </TabsTrigger>
               <TabsTrigger value="local-resources" className="h-8 rounded-lg px-3 font-mono text-xs tracking-[0.04em]">
                 Local API specs <span className="ml-1.5">{status?.localResources?.length ?? 0}</span>
               </TabsTrigger>
@@ -340,6 +344,10 @@ export function PanelApp({ api = panelApi }: PanelAppProps) {
                 onRefresh={refreshResources}
               />
             </div>
+          </TabsContent>
+
+          <TabsContent value="workflows" className="mt-0">
+            <WorkflowCanvas />
           </TabsContent>
 
           <TabsContent value="local-resources" className="mt-0">

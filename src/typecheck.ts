@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { listWorktrees } from './git.js'
-import { TOOL_ROOT } from './paths.js'
+import { TOOL_ROOT, vendoredShadcnFile } from './paths.js'
 import { currentUserDeclarationSource } from './currentUser.js'
 
 export type TypecheckTarget = {
@@ -141,7 +141,8 @@ function globalDeclarations(appDir: string, backendFiles: string[]): string {
     .join('\n')
   return [
     'type User = { email?: string; [key: string]: unknown }',
-    'type RetoolLocalResource = { query<T = unknown>(...args: any[]): Promise<any>; [key: string]: any }',
+    'type RetoolRawRequest = { path: string; method?: string; queryParams?: Record<string, unknown>; headers?: Record<string, string>; body?: unknown }',
+    'type RetoolLocalResource = { query<T = unknown>(...args: any[]): Promise<any>; rawRequest<T = unknown>(request: RetoolRawRequest): Promise<{ data: T; [key: string]: any }>; [key: string]: any }',
     resources,
     "declare module '*.css' { const value: string; export default value }",
   ].filter(Boolean).join('\n')
@@ -168,13 +169,15 @@ function hookDeclarations(appDir: string, virtualFile: string): string | undefin
     return [
       `type ${alias} = typeof import(${JSON.stringify(importPath)}).default`,
       `type ${alias}Request = Parameters<${alias}>[0]`,
-      `type ${alias}Params = ${alias}Request extends { params: infer Params } ? Params : never`,
+      `type ${alias}Params = ${alias}Request extends { params?: infer Params } ? NonNullable<Params> : never`,
       `type ${alias}Result = Awaited<ReturnType<${alias}>>`,
       `export declare function use${cap(endpoint)}(): {`,
       `  data: ${alias}Result | undefined`,
       '  isFetching: boolean',
-      '  error: unknown',
-      `  trigger(params: ${alias}Params, options?: unknown): { result: Promise<${alias}Result> }`,
+      '  loading: boolean',
+      '  error: string | null',
+      "  dataAccessErrors: Array<{ source: 'data_access_policy'; name: string; displayName: string; message: string; reason?: string; reasonCode?: string }>",
+      `  trigger(params: ${alias}Params, options?: { skipCache?: boolean }): { result: Promise<${alias}Result> }`,
       '}',
     ].join('\n')
   }).join('\n\n')
@@ -234,6 +237,8 @@ export function typecheckApp(inputDir: string): TypecheckResult {
         return { resolvedFileName: virtualFile, extension: ts.Extension.Dts }
       }
     }
+    const shadcnFile = vendoredShadcnFile(moduleName, containingFile)
+    if (shadcnFile) return { resolvedFileName: shadcnFile, extension: ts.Extension.Tsx }
     if (!moduleName.startsWith('.') && !isAbsolute(moduleName)) {
       const dependency = ts.resolveModuleName(moduleName, toolContainingFile, dependencyOptions, host).resolvedModule
       if (dependency) return dependency

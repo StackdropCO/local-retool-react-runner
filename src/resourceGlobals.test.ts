@@ -14,6 +14,32 @@ const map: ResourceMap = {
 }
 
 describe('resolveResources', () => {
+  it('ignores ambient legacy aliases when selecting the binding used at runtime', async () => {
+    const mcp = fakeMcp()
+    mcp.getResourceBindings.mockResolvedValue([
+      { resource_id: 'planner', variable_name: 'legacyPlanner', type: 'restapi' },
+      { resource_id: 'planner', variable_name: 'plannerApi', type: 'restapi' },
+    ])
+    const resolved = await resolveResources(mcp as any, [
+      { name: 'planner', displayName: 'Planner API', type: 'restapi' },
+    ], [
+      'declare global { const legacyPlanner: unknown; const plannerApi: unknown }',
+      'return plannerApi.rawRequest({ method: "GET", path: "/tasks" })',
+    ])
+    expect(resolved.planner).toMatchObject({
+      mcpBinding: 'plannerApi', sourceBindings: ['plannerApi'], transport: 'explore',
+    })
+    const explore = vi.fn().mockResolvedValue({ ran: true, data: { data: [] } })
+    const globals: any = buildGlobals(mcp as any, resolved, {
+      writes: false, endpoint: 'read', normalize: (raw) => raw,
+      exploreCheckoutDir: '/test/checkout', explore,
+    })
+    expect(globals.legacyPlanner).toBeUndefined()
+    await globals.plannerApi.rawRequest({ method: 'GET', path: '/tasks' })
+    expect(explore.mock.calls[0][0]).toContain('plannerApi.rawRequest')
+    await expect(globals.plannerApi.rawRequest({ method: 'POST', path: '/tasks' })).rejects.toThrow(/write blocked/i)
+  })
+
   it('maps app refs to {resourceName=uuid, binding=variable_name, kind}', async () => {
     const mcp = fakeMcp()
     mcp.getResourceBindings.mockResolvedValue([

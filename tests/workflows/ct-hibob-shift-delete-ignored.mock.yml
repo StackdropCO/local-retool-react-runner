@@ -1,0 +1,17 @@
+# Shift and break events share the subscription; they must be ignored before anything is logged.
+version: 1
+trigger:
+  requestId: 00000000-0000-4000-8000-000000000003
+  company: test-company
+  activityType: shift
+  eventType: admin_delete
+  userId: 999001
+  timeClockId: 555001
+  timeActivityId: test-activity-0003
+  eventTimestamp: 1792648811
+  webhookVersion: 1
+headers:
+  x-webhook-secret: local-test-secret
+configVars:
+  connectteam_webhook_secret: local-test-secret
+blocks: {}

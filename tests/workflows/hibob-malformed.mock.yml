@@ -1,0 +1,8 @@
+version: 1
+trigger: {"type":"timeoff.request.approved","triggeredAt":"2026-07-08T02:18:50.700607","data":{}}
+headers:
+  bob-signature: +va6VTiQFZKn3L3U75LWum7PJ8BGybVPbO5wgzaIG+YDx5f5qeU8gkNFKvvQZd6iW6h3FH/PgzFwqAaskn6ElA==
+  content-length: "88"
+configVars:
+  hi_bob_webhook_secret: local-test-secret
+blocks: {}

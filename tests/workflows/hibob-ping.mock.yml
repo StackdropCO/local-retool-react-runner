@@ -1,0 +1,9 @@
+version: 1
+trigger:
+  text: Ping test
+headers:
+  bob-signature: U23SKhu0LE+kfMB49d5a+6+Nn25yEMu1xWgTNgWHkZTY66yobC4xyOrqGNZsaX76Qo2FxqsfsODOzNV+7JKzMA==
+  content-length: "20"
+configVars:
+  hi_bob_webhook_secret: local-test-secret
+blocks: {}

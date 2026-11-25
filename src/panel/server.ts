@@ -20,6 +20,8 @@ import { parseRetoolEnvironment, type RetoolEnvironment } from '../environment.j
 import { readResourceRefs } from '../endpointRunner.js'
 import type { ResourceRef } from '../resourceGlobals.js'
 import { parseCurrentUser, resolveCurrentUser } from '../currentUser.js'
+import { loadWorkflow } from '../workflowRunner.js'
+import { buildWorkflowGraph } from '../workflowGraph.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const tsxBin = join(TOOL_ROOT, 'node_modules', '.bin', 'tsx')
@@ -321,6 +323,23 @@ export async function createPanelServer(port: number, options: PanelServerOption
 
   const app = express()
   app.use(express.json({ limit: '2mb' }))
+
+  app.get('/api/workflow/graph', (req, res) => {
+    try {
+      const directory = String(req.query.directory ?? '')
+      if (!directory || !isAbsolute(directory)) return res.status(400).json({ error: 'Choose an absolute workflow folder path.' })
+      const workflow = loadWorkflow(directory)
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({
+        name: workflow.name,
+        directory: workflow.directory,
+        ...buildWorkflowGraph(workflow),
+        blocks: workflow.blocks,
+      })
+    } catch (error) {
+      res.status(400).json({ error: String((error as Error)?.message ?? error) })
+    }
+  })
 
   const localResourceStatus = () => {
     let entries

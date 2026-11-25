@@ -671,6 +671,74 @@ Docker is the only external runtime requirement. The first run pulls
 container. Give Docker-starting hooks a generous timeout in the app's opt-in
 integration-test configuration.
 
+## Local workflow tests
+
+Open a live, interactive workflow canvas in the panel:
+
+```sh
+pnpm workflow -- --workflow "/absolute/path/to/workflow" --mode graph
+```
+
+The canvas opens on port 5171 (override with `--port`), supports drag-to-pan,
+scroll-to-zoom, a Fit control, and block inspection. It reloads the workflow
+from disk every ten seconds, with a Reload button for immediate updates. You can also open the Workflows tab in `pnpm panel`
+and enter a workflow folder there. Keep any spaces in the actual folder name.
+
+Protected Retool workflow YAML can be validated and executed without enabling
+its schedule or calling its public webhook. The workflow runner has three
+fail-closed modes:
+
+- `dry-run` parses the graph, validates edges, reports unsupported blocks, and
+  classifies SQL and REST mutations without executing JavaScript or resources.
+- `mock` executes webhook, JavaScript, conditional, loop-as-resource, and
+  response blocks. Every resource block must have an explicit fixture result.
+- `docker` behaves like mock mode except SQL blocks run against a fresh
+  disposable PostgreSQL container initialized from reviewed schema and seed
+  files. REST and other resource blocks still require explicit mocks.
+
+```sh
+pnpm workflow -- \
+  --workflow "/absolute/path/to/retool-ops/workflows/My Workflow" \
+  --mode dry-run
+
+pnpm workflow -- \
+  --workflow "/absolute/path/to/retool-ops/workflows/My Workflow" \
+  --mode mock \
+  --fixture ./tests/workflows/my-workflow.mock.yml
+```
+
+Fixture paths under `postgres.schema` and `postgres.seed` are resolved relative
+to the fixture file:
+
+```yaml
+version: 1
+trigger:
+  event: test
+headers:
+  x-webhook-secret: local-test-secret
+configVars:
+  feature_enabled: true
+blocks:
+  getCustomers:
+    result:
+      - id: 1
+        email: test@example.test
+  notifyCustomer:
+    result:
+      delivered: true
+postgres:
+  schema:
+    - fixtures/schema.sql
+  seed:
+    - fixtures/seed.sql
+```
+
+Each fixture `result` is the exact value exposed as `blockName.data`, matching
+Retool workflow expressions. For REST blocks, use the response body itself.
+
+Mock and Docker modes never construct an MCP or Retool CLI client. Missing
+resource mocks fail the run instead of falling through to a live environment.
+
 ### Mock warehouse and API resources
 
 Keep transactional SQL real while replacing Databricks or external APIs with

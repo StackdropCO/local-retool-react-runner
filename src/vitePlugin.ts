@@ -1,4 +1,5 @@
 import type { Plugin } from 'vite'
+import { vendoredShadcnFile } from './paths.js'
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -73,10 +74,11 @@ export function hooksVirtualPlugin(opts: { appDir: string; endpoints: string[]; 
     // filesystem plugin turns imports into /@fs URLs and serves the local
     // type-check stubs (whose trigger intentionally returns undefined).
     enforce: 'pre',
-    resolveId(id) {
+    resolveId(id, importer) {
       const clean = id.replace(/\.tsx?$/, '')
       if (marker.test(clean)) return virtualId
       if (currentUserMarker.test(clean)) return currentUserVirtualId
+      if (importer) return vendoredShadcnFile(clean, importer) ?? null
       return null
     },
     load(id) {

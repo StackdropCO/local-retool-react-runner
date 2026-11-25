@@ -1,0 +1,77 @@
+version: 1
+trigger:
+  companyId: 100001
+  type: timeoff.request.approved
+  triggeredBy: "3000000000000000002"
+  triggeredAt: 2026-07-08T02:18:50.700607
+  version: v2
+  data:
+    timeoffRequestId: 70000001
+    employeeId: "3000000000000000001"
+    getApi: https://api.hibob.com/v1/timeoff/employees/3000000000000000001/requests/70000001
+    originalRequestId: null
+    previousRequestId: null
+headers:
+  bob-signature: oXTRes9dE1LEoJiPQFusj8lTAsXCiiXInP25XQ5HbZd4jYNKOkItaPjEQXM5U5dnuPxxuOoxwQhbf4hWYAbqTw==
+  content-length: "362"
+configVars:
+  hi_bob_webhook_secret: local-test-secret
+blocks:
+  insert_initial_vacation_data:
+    result:
+      affectedRows: 1
+  hibob_get_timeoff_details:
+    result:
+      type: request
+      status: approved
+      policyTypeDisplayName: PTO
+      startDate: 2026-08-10
+      endDate: 2026-08-10
+      startPortion: all_day
+      endPortion: all_day
+      dayPortion: null
+      durations: []
+      timeZone: Europe/London
+      totalDuration: 1
+      durationUnit: days
+  hibob_get_employee_email:
+    result:
+      id: "3000000000000000001"
+      email: test.employee@example.test
+      work:
+        siteId: "100001"
+        site: Test office
+  get_locations_hibob:
+    result:
+      employees: []
+  connectteam_getpeople:
+    result:
+      data:
+        users:
+          - userId: 999001
+            firstName: Test
+            lastName: Employee
+            email: test.employee@example.test
+  connectteam_getclockId:
+    result:
+      data:
+        assets:
+          - id: 555001
+  get_existing_cnct_request:
+    result:
+      data:
+        requests: []
+  create_timeoff:
+    result:
+      requestId: req-mock-1
+      data:
+        id: ct-req-1
+        userId: 999001
+        isAllDay: true
+        startDate: 2026-08-10
+        endDate: 2026-08-10
+        timezone: Europe/London
+        status: approved
+  update_log:
+    result:
+      affectedRows: 1

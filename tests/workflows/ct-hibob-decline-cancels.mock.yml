@@ -1,0 +1,38 @@
+# Connecteam -> HiBob reverse sync: an approved time-off that is later declined
+# in Connecteam must cancel the HiBob request it created.
+# Payload shape is Connecteam's flat decline event (no timeActivity object).
+version: 1
+trigger:
+  requestId: 00000000-0000-4000-8000-000000000001
+  company: test-company
+  activityType: time_off
+  eventType: admin_declined_request
+  userId: 999001
+  timeClockId: 555001
+  timeActivityId: test-activity-0001
+  eventTimestamp: 1792648811
+  webhookVersion: 1
+headers:
+  x-webhook-secret: local-test-secret
+configVars:
+  connectteam_webhook_secret: local-test-secret
+blocks:
+  insert_event:
+    result:
+      - id: 9001
+  find_synced_request:
+    result:
+      - id: 8001
+        hibob_request_id: "70000001"
+        hibob_employee_id: "3000000000000000001"
+  get_hibob_status:
+    result:
+      requestId: 70000001
+      status: approved
+  cancel_hibob_request:
+    result: {}
+    metadata:
+      status: 200
+  update_cancel_log:
+    result:
+      affectedRows: 1

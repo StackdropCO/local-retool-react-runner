@@ -104,6 +104,32 @@ describe('resolveTypecheckTarget', () => {
 })
 
 describe('typecheckApp', () => {
+  it('matches Retool generated hooks, rawRequest and lib/shadcn when the app has no generated files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'local-mcp-typecheck-retool-types-'))
+    temporaryDirectories.push(root)
+    const app = createApp(root, {
+      backend: [
+        'type Rows = { data?: { rows?: unknown[] } }',
+        'export default async function load(req: { params?: { limit?: number }; user: User }) {',
+        "  const response = await warehouseDb.rawRequest<Rows>({ path: '/rows', method: 'GET', queryParams: { limit: String(req.params?.limit ?? 1) } })",
+        '  return response.data.data?.rows ?? []',
+        '}',
+      ].join('\n'),
+      frontend: [
+        "import { Button } from './lib/shadcn/button'",
+        "import { useLoad } from './hooks/backend/reports'",
+        'export default function App() {',
+        '  const { loading, error, dataAccessErrors, trigger } = useLoad()',
+        '  trigger({ limit: 1 }, { skipCache: true })',
+        "  const message: string | null = error ?? (dataAccessErrors.length > 0 ? dataAccessErrors.map((accessError) => accessError.message).join('; ') : null)",
+        '  return <Button disabled={loading}>{message}</Button>',
+        '}',
+      ].join('\n'),
+    })
+
+    expect(typecheckApp(app).diagnostics).toEqual([])
+  })
+
   it('checks backend resource globals and frontend Retool hooks without writing generated files into the app', () => {
     const root = mkdtempSync(join(tmpdir(), 'local-mcp-typecheck-app-'))
     temporaryDirectories.push(root)
