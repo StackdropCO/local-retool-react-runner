@@ -47,6 +47,9 @@ function identifiersByLowercase(sourceTexts: string[]): Map<string, Set<string>>
   for (const [index, text] of sourceTexts.entries()) {
     const source = ts.createSourceFile(`resource-source-${index}.ts`, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
     const visit = (node: ts.Node) => {
+      // Generated `declare global` blocks list deprecated aliases as well as
+      // the current name. They are type availability, not runtime usage.
+      if (ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) return
       if (ts.isIdentifier(node)) {
         const names = identifiers.get(node.text.toLowerCase()) ?? new Set<string>()
         names.add(node.text)

@@ -1,0 +1,25 @@
+# A decline for a time-off that never reached HiBob is logged as a no-op, with no DELETE.
+version: 1
+trigger:
+  requestId: 00000000-0000-4000-8000-000000000002
+  company: test-company
+  activityType: time_off
+  eventType: admin_declined_request
+  userId: 999001
+  timeClockId: 555001
+  timeActivityId: test-activity-0002
+  eventTimestamp: 1792648811
+  webhookVersion: 1
+headers:
+  x-webhook-secret: local-test-secret
+configVars:
+  connectteam_webhook_secret: local-test-secret
+blocks:
+  insert_event:
+    result:
+      - id: 9002
+  find_synced_request:
+    result: []
+  cancel_noop_log:
+    result:
+      affectedRows: 1

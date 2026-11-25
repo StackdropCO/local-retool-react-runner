@@ -64,6 +64,24 @@ describe('panel server', () => {
     expect(favicon.status).toBe(204)
   })
 
+  it('reloads workflow graph and block details from disk', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'panel-workflow-'))
+    temporaryDirectories.push(parent)
+    const directory = join(parent, 'Workflow with trailing space ')
+    mkdirSync(directory)
+    writeFileSync(join(directory, 'workflow.yml'), 'name: Live workflow\nworkflowId: test\n')
+    const path = join(directory, 'start.yml')
+    writeFileSync(path, 'id: start\nsubtype: JavascriptQuery\nblockData: { uuid: start, blockType: webhook }\n')
+    panel = await createPanelServer(0)
+    const url = `${panel.url}/api/workflow/graph?directory=${encodeURIComponent(directory)}`
+    const first = await fetch(url).then((response) => response.json())
+    expect(first.nodes).toEqual([expect.objectContaining({ id: 'start', kind: 'trigger' })])
+    writeFileSync(path, 'id: start\nsubtype: JavascriptQuery\ntemplate: { query: "return 42" }\nblockData: { uuid: start, blockType: webhook }\n')
+    const second = await fetch(url).then((response) => response.json())
+    expect(second.blocks[0].template.query).toBe('return 42')
+    expect((await fetch(`${panel.url}/api/workflow/graph?directory=relative`)).status).toBe(400)
+  })
+
   it('persists a validated emulated current user', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'panel-current-user-'))
     temporaryDirectories.push(directory)

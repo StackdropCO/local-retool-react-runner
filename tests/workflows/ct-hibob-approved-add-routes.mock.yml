@@ -1,0 +1,26 @@
+# Regression: an approved time-off still takes the add/edit path (branch_event_type port 0).
+version: 1
+trigger:
+  requestId: 00000000-0000-4000-8000-000000000004
+  company: test-company
+  activityType: time_off
+  eventType: admin_approved_add_request
+  userId: 999001
+  timeClockId: 555001
+  timeActivity:
+    id: test-activity-0004
+    policyTypeId: test-policy-1
+    isAllDay: true
+    start: { timestamp: 1793404800, timezone: Europe/London }
+    end: { timestamp: 1793491200, timezone: Europe/London }
+    duration: { value: 2, units: days }
+  eventTimestamp: 1792648811
+  webhookVersion: 1
+headers:
+  x-webhook-secret: local-test-secret
+configVars:
+  connectteam_webhook_secret: local-test-secret
+blocks:
+  insert_event:
+    result:
+      - id: 9004

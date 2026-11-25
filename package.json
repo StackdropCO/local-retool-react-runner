@@ -22,7 +22,8 @@
     "probe": "tsx src/scripts/probe.ts",
     "start": "tsx src/index.ts",
     "dev": "tsx src/dev.ts",
-    "panel": "tsx src/panel.ts"
+    "panel": "tsx src/panel.ts",
+    "workflow": "tsx src/workflowCli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
