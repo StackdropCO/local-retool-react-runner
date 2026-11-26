@@ -129,7 +129,10 @@ export async function startServer(opts: {
 
   app.post('/rpc/:endpoint', async (req, res) => {
     const endpoint = req.params.endpoint
-    const endpointResourceIds = new Set((refsByEndpoint[endpoint] ?? []).map((ref) => ref.name))
+    // package.json's resourceReferencesByFile can lag behind new endpoints (it is refreshed by
+    // Retool, not by local edits): an endpoint with no entry gets every app resource.
+    const endpointRefs = refsByEndpoint[endpoint] ?? Object.values(refsByEndpoint).flat()
+    const endpointResourceIds = new Set(endpointRefs.map((ref) => ref.name))
     const endpointMap = Object.fromEntries(
       Object.entries(map).filter(([resourceId]) => endpointResourceIds.has(resourceId)),
     )
@@ -150,7 +153,7 @@ export async function startServer(opts: {
       const result = opts.mcp.batchCalls
         ? await opts.mcp.batchCalls(execute)
         : await execute()
-      res.json({ result })
+      res.json({ result: await decodeRawStream(result) })
     } catch (err: any) {
       res.status(400).json({ __error: true, error: String(err?.message ?? err) })
     }
@@ -191,4 +194,13 @@ export async function startServer(opts: {
       })
     })
   })
+}
+
+/** A backend that returns `queryStreamRaw`'s stream gets its bytes decoded back to JSON, as Retool does. */
+export async function decodeRawStream(value: unknown): Promise<unknown> {
+  if (!value || typeof value !== 'object' || typeof (value as any)[Symbol.asyncIterator] !== 'function') return value
+  const chunks: Uint8Array[] = []
+  for await (const c of value as AsyncIterable<Uint8Array | string>) chunks.push(typeof c === 'string' ? new TextEncoder().encode(c) : c)
+  const text = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8')
+  return text ? JSON.parse(text) : null
 }

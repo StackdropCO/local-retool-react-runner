@@ -207,6 +207,13 @@ export function buildGlobals(
           if (params !== undefined && !Array.isArray(params)) throw new Error('SQL query parameters must be an array')
           return run(entry, (binding) => buildSqlSnippet(binding, sql, params), { safeRead: !write })
         },
+        // Local stand-in for Retool's streamed raw response: run the buffered query and
+        // expose it as a one-chunk byte stream of its JSON. server.ts decodes it back.
+        queryStreamRaw: async (sql: string, params?: unknown[]) => {
+          const result = await proxy.query(sql, params)
+          const bytes = new TextEncoder().encode(JSON.stringify(result))
+          return { async *[Symbol.asyncIterator]() { yield bytes } }
+        },
       }
       for (const binding of entry.sourceBindings) globals[binding] = proxy
     } else if (entry.transport === 'explore') {
